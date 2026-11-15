@@ -766,6 +766,34 @@ public class MainActivity extends Activity {
         titleView.setPadding(dp(2), dp(2), dp(2), dp(8));
         detailContainer.addView(titleView);
 
+        String code = obj.optString("code", "");
+        String revision = obj.optString("revision", "");
+        String updatedAt = obj.optString("updated_at", "");
+        if (!code.isEmpty() || !revision.isEmpty() || !updatedAt.isEmpty()) {
+            StringBuilder metaText = new StringBuilder();
+            if (!code.isEmpty()) {
+                metaText.append("编号 ").append(code);
+            }
+            if (!revision.isEmpty()) {
+                if (metaText.length() > 0) {
+                    metaText.append(" · ");
+                }
+                metaText.append("页面版本 ").append(revision);
+            }
+            if (!updatedAt.isEmpty()) {
+                if (metaText.length() > 0) {
+                    metaText.append(" · ");
+                }
+                metaText.append("最后编辑 ").append(updatedAt);
+            }
+            TextView meta = new TextView(this);
+            meta.setText(metaText.toString());
+            meta.setTextSize(10);
+            meta.setTextColor(MUTED);
+            meta.setPadding(dp(2), 0, dp(2), dp(6));
+            detailContainer.addView(meta);
+        }
+
         LinearLayout classCard = new LinearLayout(this);
         classCard.setOrientation(LinearLayout.VERTICAL);
         int background;

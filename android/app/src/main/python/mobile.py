@@ -59,6 +59,7 @@ def _payload(info) -> dict:
         "title": info.title,
         "label": info.label,
         "alias": info.alias,
+        "code": info.code,
         "page_key": getattr(info, "page_key", ""),
         "class_text": info.class_text,
         "class_key": info.class_key,
@@ -66,6 +67,8 @@ def _payload(info) -> dict:
         "class_color": _class_color(info.class_key),
         "tags": info.tags,
         "summary": info.summary,
+        "revision": info.revision,
+        "updated_at": info.updated_at,
         "url": info.url,
         "cached": info.cached,
     }
