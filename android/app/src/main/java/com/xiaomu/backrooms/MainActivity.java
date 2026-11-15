@@ -48,7 +48,8 @@ import java.util.concurrent.Executors;
 public class MainActivity extends Activity {
 
     private static final int ROW_GROUP = 0;
-    private static final int ROW_ENTRY = 1;
+    private static final int ROW_SECTION = 1;
+    private static final int ROW_ENTRY = 2;
 
     private static final int PAPER = Color.parseColor("#F4F1E8");
     private static final int PANEL = Color.parseColor("#FBF8F0");
@@ -73,6 +74,7 @@ public class MainActivity extends Activity {
     private Button queryButton;
     private Button randomButton;
     private Button refreshIndexButton;
+    private Button aboutButton;
     private Button openButton;
     private Button refreshButton;
     private Button listToggleButton;
@@ -85,6 +87,7 @@ public class MainActivity extends Activity {
     private final List<Row> rows = new ArrayList<>();
     private final Set<String> expandedGroups = new HashSet<>();
     private final Set<String> expandedParents = new HashSet<>();
+    private final Set<String> expandedSections = new HashSet<>();
 
     private RowAdapter adapter;
     private String selectedSlug = "";
@@ -212,7 +215,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("The Backrooms · Wikidot / Fandom · v1.0.0");
+        subtitle.setText("The Backrooms · Wikidot / Fandom · v1.0.1");
         subtitle.setTextSize(10);
         subtitle.setTextColor(MUTED);
         subtitle.setPadding(0, 0, 0, dp(6));
@@ -233,6 +236,11 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
         refreshIndexParams.leftMargin = dp(6);
         sourceRow.addView(refreshIndexButton, refreshIndexParams);
+        aboutButton = makeButton("关于", false);
+        LinearLayout.LayoutParams aboutParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
+        aboutParams.leftMargin = dp(6);
+        sourceRow.addView(aboutButton, aboutParams);
         root.addView(sourceRow);
 
         queryInput = new EditText(this);
@@ -329,6 +337,18 @@ public class MainActivity extends Activity {
         adapter = new RowAdapter();
         listView.setAdapter(adapter);
         listView.setOnItemClickListener((parent, view, position, id) -> onRowClick(position));
+        listView.setOnItemLongClickListener((parent, view, position, id) -> {
+            if (position < 0 || position >= rows.size()) {
+                return false;
+            }
+            Row row = rows.get(position);
+            if (row.type != ROW_ENTRY) {
+                return false;
+            }
+            hideKeyboard();
+            loadEntry(row.entry, false);
+            return true;
+        });
 
         filterInput.addTextChangedListener(new TextWatcher() {
             @Override
@@ -348,6 +368,8 @@ public class MainActivity extends Activity {
         queryButton.setOnClickListener(v -> doQuery(false));
         refreshIndexButton.setOnClickListener(v -> loadIndex(true));
         randomButton.setOnClickListener(v -> openRandom());
+        aboutButton.setOnClickListener(v ->
+                startActivity(new Intent(MainActivity.this, AboutActivity.class)));
         refreshButton.setOnClickListener(v -> refreshDetail());
         openButton.setOnClickListener(v -> {
             if (!currentUrl.isEmpty()) {
@@ -373,7 +395,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        renderPlaceholder("索引加载后，点左侧层级或输入编号查询。");
+        renderPlaceholder("索引加载后，点层级打开详情页。");
         listStatusView.setText("索引加载中…");
     }
 
@@ -405,6 +427,7 @@ public class MainActivity extends Activity {
         rows.clear();
         expandedGroups.clear();
         expandedParents.clear();
+        expandedSections.clear();
         selectedSlug = "";
         currentUrl = "";
         lastEntrySlug = "";
@@ -472,33 +495,28 @@ public class MainActivity extends Activity {
                     group.key = groupObj.optString("key");
                     group.label = groupObj.optString("label", group.key);
                     group.count = groupObj.optInt("count", 0);
-                    JSONArray mainArray = groupObj.optJSONArray("mains");
-                    if (mainArray != null) {
-                        for (int j = 0; j < mainArray.length(); j++) {
-                            JSONObject mainObj = mainArray.optJSONObject(j);
-                            if (mainObj == null) {
+
+                    JSONArray sectionArray = groupObj.optJSONArray("sections");
+                    if (sectionArray != null && sectionArray.length() > 0) {
+                        for (int j = 0; j < sectionArray.length(); j++) {
+                            JSONObject sectionObj = sectionArray.optJSONObject(j);
+                            if (sectionObj == null) {
                                 continue;
                             }
-                            MainNode main = new MainNode();
-                            main.entry = parseEntry(mainObj.optJSONObject("entry"));
-                            if (main.entry == null) {
-                                continue;
+                            SectionNode section = new SectionNode();
+                            section.key = sectionObj.optString("key");
+                            section.label = sectionObj.optString("label", section.key);
+                            section.count = sectionObj.optInt("count", 0);
+                            parseMains(sectionObj.optJSONArray("mains"), section.mains);
+                            if (!section.mains.isEmpty()) {
+                                group.sections.add(section);
                             }
-                            JSONArray childArray = mainObj.optJSONArray("children");
-                            if (childArray != null) {
-                                for (int k = 0; k < childArray.length(); k++) {
-                                    Entry child = parseEntry(childArray.optJSONObject(k));
-                                    if (child != null) {
-                                        main.children.add(child);
-                                    }
-                                }
-                            }
-                            group.mains.add(main);
-                            allEntries.add(main.entry);
-                            allEntries.addAll(main.children);
                         }
+                    } else {
+                        parseMains(groupObj.optJSONArray("mains"), group.mains);
                     }
-                    if (!group.mains.isEmpty()) {
+
+                    if (!group.mains.isEmpty() || !group.sections.isEmpty()) {
                         groups.add(group);
                     }
                 }
@@ -516,11 +534,40 @@ public class MainActivity extends Activity {
             int total = obj.optInt("total", allEntries.size());
             listStatusView.setText("索引 " + total + " 条 · " + groups.size() + " 个分组");
             if (!hasDetail) {
-                renderPlaceholder("点左侧层级，或输入编号查询。");
+                renderPlaceholder("点层级打开详情页；带 ▸ 的上级先展开，长按可看该上级详情。");
             }
         } catch (Exception error) {
             listStatusView.setText("索引解析失败");
             statusView.setText(String.valueOf(error));
+        }
+    }
+
+    private void parseMains(JSONArray mainArray, List<MainNode> target) {
+        if (mainArray == null) {
+            return;
+        }
+        for (int j = 0; j < mainArray.length(); j++) {
+            JSONObject mainObj = mainArray.optJSONObject(j);
+            if (mainObj == null) {
+                continue;
+            }
+            MainNode main = new MainNode();
+            main.entry = parseEntry(mainObj.optJSONObject("entry"));
+            if (main.entry == null) {
+                continue;
+            }
+            JSONArray childArray = mainObj.optJSONArray("children");
+            if (childArray != null) {
+                for (int k = 0; k < childArray.length(); k++) {
+                    Entry child = parseEntry(childArray.optJSONObject(k));
+                    if (child != null) {
+                        main.children.add(child);
+                    }
+                }
+            }
+            target.add(main);
+            allEntries.add(main.entry);
+            allEntries.addAll(main.children);
         }
     }
 
@@ -567,18 +614,41 @@ public class MainActivity extends Activity {
                 if (!groupRow.expanded) {
                     continue;
                 }
-                for (MainNode main : group.mains) {
-                    boolean expanded = expandedParents.contains(main.entry.slug);
-                    rows.add(entryRow(main.entry, 1, main.children.size(), expanded));
-                    if (expanded) {
-                        for (Entry child : main.children) {
-                            rows.add(entryRow(child, 2, 0, false));
+                if (!group.sections.isEmpty()) {
+                    for (SectionNode section : group.sections) {
+                        Row sectionRow = new Row();
+                        sectionRow.type = ROW_SECTION;
+                        sectionRow.group = group;
+                        sectionRow.section = section;
+                        sectionRow.depth = 1;
+                        sectionRow.expanded = expandedSections.contains(sectionKey(group, section));
+                        rows.add(sectionRow);
+                        if (sectionRow.expanded) {
+                            addMainRows(section.mains, 2);
                         }
                     }
+                } else {
+                    addMainRows(group.mains, 1);
                 }
             }
         }
         adapter.notifyDataSetChanged();
+    }
+
+    private String sectionKey(GroupNode group, SectionNode section) {
+        return group.key + "/" + section.key;
+    }
+
+    private void addMainRows(List<MainNode> mains, int parentDepth) {
+        for (MainNode main : mains) {
+            boolean expanded = expandedParents.contains(main.entry.slug);
+            rows.add(entryRow(main.entry, parentDepth, main.children.size(), expanded));
+            if (expanded) {
+                for (Entry child : main.children) {
+                    rows.add(entryRow(child, parentDepth + 1, 0, false));
+                }
+            }
+        }
     }
 
     private Row entryRow(Entry entry, int depth, int childCount, boolean expanded) {
@@ -605,6 +675,15 @@ public class MainActivity extends Activity {
             listView.setSelection(position);
             return;
         }
+        if (row.type == ROW_SECTION) {
+            String key = sectionKey(row.group, row.section);
+            if (!expandedSections.add(key)) {
+                expandedSections.remove(key);
+            }
+            rebuildRows();
+            listView.setSelection(position);
+            return;
+        }
 
         selectedSlug = row.entry.slug;
         if (row.childCount > 0) {
@@ -616,9 +695,9 @@ public class MainActivity extends Activity {
             if (selected >= 0) {
                 listView.setSelection(selected);
             }
-        } else {
-            adapter.notifyDataSetChanged();
+            return;
         }
+        adapter.notifyDataSetChanged();
         loadEntry(row.entry, false);
     }
 
@@ -634,6 +713,30 @@ public class MainActivity extends Activity {
             return;
         }
         for (GroupNode group : groups) {
+            if (!group.sections.isEmpty()) {
+                for (SectionNode section : group.sections) {
+                    for (MainNode main : section.mains) {
+                        if (main.entry.slug.equals(slug)) {
+                            expandedGroups.add(group.key);
+                            expandedSections.add(sectionKey(group, section));
+                            rebuildRows();
+                            scrollToSlug(slug);
+                            return;
+                        }
+                        for (Entry child : main.children) {
+                            if (child.slug.equals(slug)) {
+                                expandedGroups.add(group.key);
+                                expandedSections.add(sectionKey(group, section));
+                                expandedParents.add(main.entry.slug);
+                                rebuildRows();
+                                scrollToSlug(slug);
+                                return;
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
             for (MainNode main : group.mains) {
                 if (main.entry.slug.equals(slug)) {
                     expandedGroups.add(group.key);
@@ -804,9 +907,26 @@ public class MainActivity extends Activity {
             if (!pageKey.isEmpty()) {
                 selectBySlug(pageKey);
             }
+            openDetailPage(
+                    json,
+                    pageKey,
+                    obj.optString("label", obj.optString("title", "")),
+                    lastEntrySlug.isEmpty() ? lastQuery : ""
+            );
         } catch (Exception error) {
             showError(String.valueOf(error));
         }
+    }
+
+    private void openDetailPage(String json, String slug, String title, String query) {
+        Intent intent = new Intent(this, LevelDetailActivity.class);
+        intent.putExtra("json", json);
+        intent.putExtra("source", currentSource());
+        intent.putExtra("slug", slug);
+        intent.putExtra("title", title);
+        intent.putExtra("query", query);
+        intent.putExtra("proxy", proxyUrl());
+        startActivity(intent);
     }
 
     private void renderDetail(JSONObject obj) {
@@ -977,11 +1097,20 @@ public class MainActivity extends Activity {
         String label = "";
         int count = 0;
         final List<MainNode> mains = new ArrayList<>();
+        final List<SectionNode> sections = new ArrayList<>();
+    }
+
+    private static class SectionNode {
+        String key = "";
+        String label = "";
+        int count = 0;
+        final List<MainNode> mains = new ArrayList<>();
     }
 
     private static class Row {
         int type;
         GroupNode group;
+        SectionNode section;
         Entry entry;
         int depth;
         int childCount;
@@ -1025,6 +1154,14 @@ public class MainActivity extends Activity {
                 view.setTextColor(ACCENT_DARK);
                 view.setBackgroundColor(GROUP_BG);
                 view.setPadding(dp(8), dp(10), dp(8), dp(10));
+            } else if (row.type == ROW_SECTION) {
+                String arrow = row.expanded ? "▾ " : "▸ ";
+                view.setText(arrow + row.section.label + "（" + row.section.count + "）");
+                view.setTextSize(12);
+                view.setTypeface(Typeface.DEFAULT_BOLD);
+                view.setTextColor(Color.parseColor("#6F5B2C"));
+                view.setBackgroundColor(Color.parseColor("#FAF4E4"));
+                view.setPadding(dp(10 + row.depth * 15), dp(9), dp(8), dp(9));
             } else {
                 String prefix = "";
                 if (row.childCount > 0) {

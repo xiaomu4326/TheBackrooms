@@ -1,6 +1,6 @@
 # 后室层级档案 · Backrooms CN 查询器
 
-版本 **1.0.0**
+版本 **1.0.1**
 
 同时查询 **Wikidot 中文后室** 与 **Fandom 中文后室** 的层级档案。桌面版用 Tkinter 编写，
 Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
@@ -15,8 +15,8 @@ Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
 
 | 文件 | 平台 |
 |---|---|
-| `BackroomsLevelViewer-1.0.0-win64.exe` | Windows 10/11（64 位） |
-| `BackroomsLevelViewer-1.0.0.apk` | Android 7.0+（arm64-v8a / x86_64） |
+| `BackroomsLevelViewer-1.0.1-win64.exe` | Windows 10/11（64 位） |
+| `BackroomsLevelViewer-1.0.1.apk` | Android 7.0+（arm64-v8a / x86_64） |
 
 ## 功能
 
@@ -24,6 +24,7 @@ Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
 - 输入 `0`、`0.1`、`386`、`C-156`、`Level ZH 38`，或直接搜层级名称
 - 显示：层级编号、名称、生存难度、三条难度细则、标签、简介、版本与更新时间
 - 桌面版侧边栏分组：普通层级 / C层级 / ZH层级 / 隐秘层级 / 玩笑层级 / 其他页面
+- 普通层级下再按 0、1–100、101–200……分段，Fandom 与 Wikidot 一致
 - 子层级树形嵌套：点 `Level 0` 展开 `Level 0.1`、`0.2`……
 - Fandom `displaytitle` 名称直接进入索引；隐秘层级取官方列表，玩笑层级按标签/标题识别
 - 本地缓存，重复查询不再请求站点
@@ -49,7 +50,9 @@ APK 与桌面版共用同一套 `backrooms` 解析核心和分组树：
 - 层级列表：普通 / C / ZH / 隐秘 / 玩笑 / 子层级 / 其他
 - 子层级树形嵌套：点上级前的 `▸` 展开 `Level 0.1` 等
 - 列表筛选、随机层级、刷新索引、刷新当前页面
-- 详情：名称、生存难度、三条细则、标签、简介、原文链接
+- 详情：名称、编号、页面版本、最后编辑时间、生存难度、三条细则、标签、简介、原文链接
+- 独立全屏详情页：纸感配色 + 白色圆角卡片，返回后保留列表状态
+- 关于页：应用图标、简介、版本、许可证、GitHub 仓库链接（EXE / APK 都有）
 - 首次查询优先直连页面；失败再查索引
 - 读取 Android 系统代理设置，配合代理可访问 Fandom
 - Fandom 在中国大陆常被 DNS 污染或拦截，需要自备网络环境或代理
@@ -81,7 +84,7 @@ TheBackrooms/
 
 ```bash
 pip install pyinstaller
-pyinstaller --noconfirm --clean --onefile --windowed --name BackroomsLevelViewer --collect-submodules backrooms main.py
+pyinstaller --noconfirm --clean --onefile --windowed --name BackroomsLevelViewer --collect-submodules backrooms --add-data "backrooms/assets;backrooms/assets" --icon backrooms/assets/icon.ico main.py
 ```
 
 产物在 `dist/BackroomsLevelViewer.exe`。

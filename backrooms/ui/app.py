@@ -9,6 +9,7 @@ import time
 import tkinter as tk
 import webbrowser
 from dataclasses import dataclass
+from pathlib import Path
 from tkinter import ttk
 
 from .. import config, groups
@@ -91,6 +92,7 @@ class BackroomsApp(tk.Tk):
         self._rows: list[_Row] = []
         self._expanded: dict[str, bool] = groups.default_expanded()
         self._expanded_parents: set[str] = set()
+        self._expanded_ranges: set[str] = set()
         self._last_toggle = 0.0
         self._last_toggle_key = ""
 
@@ -99,10 +101,19 @@ class BackroomsApp(tk.Tk):
         self.minsize(980, 640)
         self.configure(bg=th.BG)
 
+        self._window_icon = None
+        try:
+            icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
+            self._window_icon = tk.PhotoImage(file=str(icon_path))
+            self.iconphoto(True, self._window_icon)
+        except Exception:
+            self._window_icon = None
+
         self._build_ui()
         self._render_placeholder()
         self.bind("<Control-f>", lambda _e: self.search_entry.focus_set())
         self.bind("<Control-r>", lambda _e: self._refresh_current())
+        self.bind("<F1>", lambda _e: self._show_about())
         self.after(120, self.search_entry.focus_set)
         self._poll()
         self.after(150, self._load_index_async)
@@ -146,8 +157,86 @@ class BackroomsApp(tk.Tk):
         right_box = tk.Frame(header, bg=th.BG)
         right_box.pack(side="right")
         self._build_source_switch(right_box)
-        tk.Label(right_box, text="Enter 查询 · 双击列表打开 · Esc 清空", bg=th.BG,
-                 fg=th.MUTED, font=self.theme.font_small).pack(anchor="e", pady=(6, 0))
+        hint_row = tk.Frame(right_box, bg=th.BG)
+        hint_row.pack(anchor="e", pady=(6, 0))
+        tk.Label(hint_row, text="Enter 查询 · 双击列表打开 · Esc 清空", bg=th.BG,
+                 fg=th.MUTED, font=self.theme.font_small).pack(side="left")
+        about = tk.Label(hint_row, text="关于", bg=th.BG, fg=th.ACCENT_DARK,
+                         font=(self.theme.family, 9, "bold"), cursor="hand2")
+        about.pack(side="left", padx=(14, 0))
+        about.bind("<Button-1>", lambda _event: self._show_about())
+
+    def _show_about(self) -> None:
+        win = tk.Toplevel(self)
+        win.title("关于 · 后室层级档案")
+        win.configure(bg=th.BG)
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        win.geometry("390x700")
+
+        card = tk.Frame(win, bg=th.PANEL, highlightthickness=1,
+                        highlightbackground=th.LINE)
+        card.pack(fill="both", expand=True, padx=14, pady=14)
+        inner = tk.Frame(card, bg=th.PANEL, padx=20, pady=18)
+        inner.pack(fill="both", expand=True)
+
+        icon_path = Path(__file__).resolve().parent.parent / "assets" / "icon.png"
+        try:
+            icon = tk.PhotoImage(file=str(icon_path)).subsample(4)
+            self._about_icon = icon
+            tk.Label(inner, image=icon, bg=th.PANEL).pack()
+        except Exception:
+            pass
+
+        tk.Label(inner, text="后室层级档案", bg=th.PANEL, fg=th.INK,
+                 font=(self.theme.family, 18, "bold")).pack(pady=(10, 0))
+        tk.Label(inner, text=f"v{config.APP_VERSION}", bg=th.PANEL, fg=th.MUTED,
+                 font=self.theme.font_small).pack(pady=(2, 8))
+        tk.Label(
+            inner,
+            text="把后室中文维基的层级档案收进一个查询器：支持 Wikidot / Fandom、"
+                 "层级分组、子层级展开、生存难度与详情页。",
+            bg=th.PANEL, fg=th.INK, font=self.theme.font_body,
+            wraplength=310, justify="left",
+        ).pack(fill="x", pady=(0, 12))
+
+        info = tk.Frame(inner, bg="#F4EDE0", padx=12, pady=10)
+        info.pack(fill="x")
+        for label, value in (
+            ("版本", config.APP_VERSION),
+            ("许可证", "代码 MIT · 维基内容 CC BY-SA 3.0"),
+            ("数据源", "Wikidot / Fandom"),
+        ):
+            row = tk.Frame(info, bg="#F4EDE0")
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=label, bg="#F4EDE0", fg=th.MUTED, width=7,
+                     anchor="w", font=self.theme.font_small).pack(side="left")
+            tk.Label(row, text=value, bg="#F4EDE0", fg=th.INK, anchor="w",
+                     font=self.theme.font_small).pack(side="left", fill="x", expand=True)
+
+        tk.Label(inner, text="GitHub 仓库", bg=th.PANEL, fg=th.MUTED,
+                 font=(self.theme.family, 9, "bold")).pack(anchor="w", pady=(14, 2))
+        repo = tk.Label(inner, text="https://github.com/xiaomu4326/TheBackrooms",
+                        bg=th.PANEL, fg=th.ACCENT_DARK,
+                        font=(self.theme.family, 9, "underline"), cursor="hand2")
+        repo.pack(anchor="w")
+        repo.bind("<Button-1>", lambda _event: webbrowser.open(
+            "https://github.com/xiaomu4326/TheBackrooms"))
+        tk.Label(
+            inner,
+            text="维基文本版权归后室中文维基 / Fandom 及作者所有，遵循 CC BY-SA 3.0。",
+            bg=th.PANEL, fg=th.MUTED, font=self.theme.font_small,
+            wraplength=310, justify="left",
+        ).pack(anchor="w", pady=(14, 0))
+
+        ttk.Button(inner, text="返回", style="Ghost.TButton",
+                   command=win.destroy).pack(side="bottom", anchor="e", pady=(14, 0))
+        win.bind("<Escape>", lambda _event: win.destroy())
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(0, x)}+{max(0, y)}")
 
     def _build_source_switch(self, parent: tk.Misc) -> None:
         box = tk.Frame(parent, bg=th.BG)
@@ -191,6 +280,7 @@ class BackroomsApp(tk.Tk):
         self._rows = []
         self._expanded = groups.default_expanded()
         self._expanded_parents = set()
+        self._expanded_ranges = set()
         self.listbox.delete(0, "end")
         self.count_var.set("加载中…")
         self.query_var.set("")
@@ -334,6 +424,8 @@ class BackroomsApp(tk.Tk):
         row = self._rows[index]
         if row.kind == "group":
             target = f"group:{row.key}"
+        elif row.kind == "range":
+            target = f"range:{row.key}"
         elif row.kind == "entry" and row.child_count:
             target = f"entry:{row.key}"
         else:
@@ -345,6 +437,8 @@ class BackroomsApp(tk.Tk):
         self._last_toggle = now
         if row.kind == "group":
             self._toggle_group(row.key)
+        elif row.kind == "range":
+            self._toggle_range(row.key)
         else:
             self._toggle_parent(row.key)
 
@@ -361,6 +455,8 @@ class BackroomsApp(tk.Tk):
             return
         if row.kind == "group":
             self._toggle_group(row.key)
+        elif row.kind == "range":
+            self._toggle_range(row.key)
         elif row.entry is not None and not self._busy:
             self.query_var.set(row.entry.title)
             self._open_entry(row.entry)
@@ -370,6 +466,19 @@ class BackroomsApp(tk.Tk):
         self._apply_filter()
         for index, row in enumerate(self._rows):
             if row.kind == "group" and row.key == key:
+                self.listbox.selection_clear(0, "end")
+                self.listbox.selection_set(index)
+                self.listbox.see(index)
+                break
+
+    def _toggle_range(self, key: str) -> None:
+        if key in self._expanded_ranges:
+            self._expanded_ranges.discard(key)
+        else:
+            self._expanded_ranges.add(key)
+        self._apply_filter()
+        for index, row in enumerate(self._rows):
+            if row.kind == "range" and row.key == key:
                 self.listbox.selection_clear(0, "end")
                 self.listbox.selection_set(index)
                 self.listbox.see(index)
@@ -536,7 +645,25 @@ class BackroomsApp(tk.Tk):
             self._add_group_row(key, count)
             if not self._expanded.get(key):
                 continue
-            if key in ("normal", "c", "zh"):
+            if key == "normal":
+                for section in family.get("sections", []):
+                    range_key = f"{key}:{section['key']}"
+                    expanded = range_key in self._expanded_ranges
+                    self._add_range_row(range_key, section["label"], section["count"], expanded)
+                    if not expanded:
+                        continue
+                    for item in section["mains"]:
+                        parent = item["entry"]
+                        children = item["children"]
+                        parent_expanded = parent.slug in self._expanded_parents
+                        self._add_entry_row(
+                            parent, depth=2, child_count=len(children),
+                            expanded=parent_expanded,
+                        )
+                        if parent_expanded:
+                            for child in children:
+                                self._add_entry_row(child, depth=3)
+            elif key in ("c", "zh"):
                 canonical = family.get("canonical") or {}
                 for parent in family["mains"]:
                     _top, base, _is_sub = groups.level_parts(parent, self.source_key)
@@ -582,6 +709,19 @@ class BackroomsApp(tk.Tk):
         )
         self._rows.append(_Row("group", key))
 
+    def _add_range_row(self, key: str, label: str, count: int, expanded: bool) -> None:
+        arrow = "▾" if expanded else "▸"
+        self.listbox.insert("end", f"    {arrow} {label}（{count}）")
+        index = self.listbox.size() - 1
+        self.listbox.itemconfig(
+            index,
+            foreground="#6F5B2C",
+            background="#FAF4E4",
+            selectbackground="#EFE0BC",
+            selectforeground="#4E3F1D",
+        )
+        self._rows.append(_Row("range", key, depth=1, expanded=expanded))
+
     def _add_entry_row(
         self,
         entry: IndexEntry,
@@ -622,6 +762,10 @@ class BackroomsApp(tk.Tk):
         top, base, is_sub = groups.level_parts(probe, self.source_key)
         if top in self._expanded:
             self._expanded[top] = True
+        if top == "normal":
+            self._expanded_ranges.add(
+                f"normal:{groups.normal_range_key(probe, self.source_key)}"
+            )
         if is_sub:
             parent_found = False
             for entry in self.entries:

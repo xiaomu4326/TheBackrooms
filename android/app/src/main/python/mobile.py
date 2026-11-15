@@ -87,6 +87,13 @@ def _direct_locator(source: str, query: str) -> str:
     return ""
 
 
+def _main(parent, children) -> dict:
+    return {
+        "entry": _entry(parent),
+        "children": [_entry(child) for child in children],
+    }
+
+
 def index(source: str, force: bool = False) -> str:
     """返回与桌面端一致的层级树：分组、上级、子层级、计数。"""
     try:
@@ -99,8 +106,32 @@ def index(source: str, force: bool = False) -> str:
             count = groups.family_count(key, family)
             if not count:
                 continue
+            if key == "normal":
+                sections = []
+                for section in family.get("sections", []):
+                    sections.append(
+                        {
+                            "key": section["key"],
+                            "label": section["label"],
+                            "count": section["count"],
+                            "mains": [
+                                _main(item["entry"], item["children"])
+                                for item in section["mains"]
+                            ],
+                        }
+                    )
+                payload.append(
+                    {
+                        "key": key,
+                        "label": groups.TOP_LABELS.get(key, key),
+                        "count": count,
+                        "sections": sections,
+                    }
+                )
+                continue
+
             mains = []
-            if key in ("normal", "c", "zh"):
+            if key in ("c", "zh"):
                 canonical = family.get("canonical") or {}
                 for parent in family["mains"]:
                     top, base, _is_sub = groups.level_parts(parent, source)
@@ -110,12 +141,7 @@ def index(source: str, force: bool = False) -> str:
                         if canonical.get(signature) == parent.slug
                         else []
                     )
-                    mains.append(
-                        {
-                            "entry": _entry(parent),
-                            "children": [_entry(child) for child in children],
-                        }
-                    )
+                    mains.append(_main(parent, children))
             else:
                 for entry in family["mains"]:
                     mains.append({"entry": _entry(entry), "children": []})

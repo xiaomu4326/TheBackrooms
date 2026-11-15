@@ -119,6 +119,47 @@ def sort_children(entries: list[IndexEntry], top: str) -> list[IndexEntry]:
     return sorted(entries, key=lambda e: _number_key(prefix, e.title))
 
 
+def normal_range(base: str) -> tuple[str, str, tuple[int, int]]:
+    """普通层级分段：0、1–100、101–200……负数/特殊编号单独成段。"""
+    if re.fullmatch(r"-?\d+", base or ""):
+        number = int(base)
+        if number == 0:
+            return "0", "0", (0, 0)
+        if number > 0:
+            start = ((number - 1) // 100) * 100 + 1
+            end = start + 99
+            return f"{start}-{end}", f"{start} – {end}", (0, start)
+        return "negative", "负数层级", (1, 0)
+    return "special", "特殊编号", (2, 0)
+
+
+def normal_range_key(entry: IndexEntry, source: str) -> str:
+    _top, base, _is_sub = level_parts(entry, source)
+    return normal_range(base)[0]
+
+
+def normal_sections(family: dict, source: str) -> list[dict]:
+    """把普通层级按 100 个编号一段切开，子层级跟着上级走。"""
+    canonical = family.get("canonical") or {}
+    sections: dict[str, dict] = {}
+    for parent in family.get("mains", []):
+        top, base, _is_sub = level_parts(parent, source)
+        key, label, order = normal_range(base)
+        signature = (top, base)
+        children = (
+            family["children"].get(signature, [])
+            if canonical.get(signature) == parent.slug
+            else []
+        )
+        section = sections.setdefault(
+            key,
+            {"key": key, "label": label, "order": order, "count": 0, "mains": []},
+        )
+        section["mains"].append({"entry": parent, "children": children})
+        section["count"] += 1 + len(children)
+    return sorted(sections.values(), key=lambda item: (item["order"], item["key"]))
+
+
 def build_families(entries: list[IndexEntry], source: str, sorter) -> dict[str, dict]:
     """把子层级挂到上级层级下；桌面端和 Android 端共用同一套树结构。"""
     families: dict[str, dict] = {
@@ -159,6 +200,7 @@ def build_families(entries: list[IndexEntry], source: str, sorter) -> dict[str, 
     families["orphan"]["mains"] = sort_children(families["orphan"]["mains"], "normal")
     for top in ("hidden", "joke", "other"):
         families[top]["mains"] = sorter(families[top]["mains"])
+    families["normal"]["sections"] = normal_sections(families["normal"], source)
     return families
 
 

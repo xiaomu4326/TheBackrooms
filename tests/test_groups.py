@@ -115,6 +115,38 @@ class BuildFamiliesTest(unittest.TestCase):
         self.assertEqual(len(families["joke"]["mains"]), 1)
 
 
+class NormalRangeTest(unittest.TestCase):
+    def test_range_labels(self) -> None:
+        self.assertEqual(groups.normal_range("0")[:2], ("0", "0"))
+        self.assertEqual(groups.normal_range("1")[:2], ("1-100", "1 – 100"))
+        self.assertEqual(groups.normal_range("100")[:2], ("1-100", "1 – 100"))
+        self.assertEqual(groups.normal_range("101")[:2], ("101-200", "101 – 200"))
+        self.assertEqual(groups.normal_range("386")[:2], ("301-400", "301 – 400"))
+        self.assertEqual(groups.normal_range("-4")[:2], ("negative", "负数层级"))
+        self.assertEqual(groups.normal_range("!")[:2], ("special", "特殊编号"))
+
+    def test_sections_keep_children(self) -> None:
+        entries = [
+            entry("Level 0", "Level 0"),
+            entry("Level 0.1", "Level 0.1"),
+            entry("Level 1", "Level 1"),
+            entry("Level 100", "Level 100"),
+            entry("Level 101", "Level 101"),
+            entry("Level 386", "Level 386"),
+        ]
+        families = groups.build_families(
+            entries, "fandom", lambda items: sorted(items, key=lambda e: e.title)
+        )
+        sections = {section["key"]: section for section in families["normal"]["sections"]}
+        self.assertEqual(list(sections), ["0", "1-100", "101-200", "301-400"])
+        self.assertEqual(sections["0"]["count"], 2)
+        self.assertEqual(
+            sections["0"]["mains"][0]["children"][0].title,
+            "Level 0.1",
+        )
+        self.assertEqual(sections["1-100"]["count"], 2)
+
+
 class SortTest(unittest.TestCase):
     def test_c_levels_sort_by_number(self) -> None:
         entries = [
