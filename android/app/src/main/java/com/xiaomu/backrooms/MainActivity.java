@@ -6,6 +6,8 @@ import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -144,15 +146,55 @@ public class MainActivity extends Activity {
         return sourceSpinner.getSelectedItemPosition() == 0 ? "wikidot" : "fandom";
     }
 
-    private Button makeButton(String text) {
+    private Button makeButton(String text, boolean primary) {
         Button button = new Button(this);
         button.setText(text);
         button.setAllCaps(false);
-        button.setTextSize(12);
-        button.setMinHeight(0);
-        button.setMinimumHeight(0);
-        button.setPadding(dp(10), dp(2), dp(10), dp(2));
+        button.setTextSize(13);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setGravity(android.view.Gravity.CENTER);
+        button.setIncludeFontPadding(false);
+        button.setMinHeight(dp(44));
+        button.setMinimumHeight(dp(44));
+        button.setPadding(dp(14), 0, dp(14), 0);
+        button.setElevation(0);
+        button.setStateListAnimator(null);
+        button.setBackground(buttonBackground(primary));
+        button.setTextColor(new ColorStateList(
+                new int[][]{
+                        new int[]{-android.R.attr.state_enabled},
+                        new int[]{}
+                },
+                new int[]{
+                        Color.parseColor("#9A9284"),
+                        INK
+                }
+        ));
         return button;
+    }
+
+    private GradientDrawable roundedFill(int color, int strokeColor) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setCornerRadius(dp(10));
+        drawable.setColor(color);
+        if (strokeColor != 0) {
+            drawable.setStroke(dp(1), strokeColor);
+        }
+        return drawable;
+    }
+
+    private StateListDrawable buttonBackground(boolean primary) {
+        int normal = primary ? ACCENT : Color.parseColor("#EFE7D6");
+        int pressed = primary ? Color.parseColor("#B5841F") : Color.parseColor("#E0D2B8");
+        int disabled = Color.parseColor("#DED8CB");
+        int stroke = primary ? 0 : Color.parseColor("#D8C9AE");
+
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{-android.R.attr.state_enabled}, roundedFill(disabled, 0));
+        states.addState(new int[]{android.R.attr.state_pressed}, roundedFill(pressed, stroke));
+        states.addState(new int[]{}, roundedFill(normal, stroke));
+        return states;
     }
 
     private void buildUi() {
@@ -185,30 +227,35 @@ public class MainActivity extends Activity {
                 new String[]{"Wikidot", "Fandom"});
         sourceSpinner.setAdapter(sourceAdapter);
         sourceRow.addView(sourceSpinner, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        refreshIndexButton = makeButton("刷新列表");
-        sourceRow.addView(refreshIndexButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                0, dp(44), 1f));
+        refreshIndexButton = makeButton("刷新列表", false);
+        LinearLayout.LayoutParams refreshIndexParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
+        refreshIndexParams.leftMargin = dp(6);
+        sourceRow.addView(refreshIndexButton, refreshIndexParams);
         root.addView(sourceRow);
 
-        LinearLayout queryRow = new LinearLayout(this);
-        queryRow.setOrientation(LinearLayout.HORIZONTAL);
-        queryRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
         queryInput = new EditText(this);
         queryInput.setHint("0 / 0.1 / C-156 / Level ZH 38");
         queryInput.setText("0");
         queryInput.setSingleLine(true);
         queryInput.setTextSize(13);
-        queryRow.addView(queryInput, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        queryButton = makeButton("查询");
-        queryButton.setBackgroundTintList(ColorStateList.valueOf(ACCENT));
-        queryButton.setTextColor(INK);
-        queryRow.addView(queryButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-        randomButton = makeButton("随机");
-        queryRow.addView(randomButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        root.addView(queryInput, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44)));
+
+        LinearLayout queryRow = new LinearLayout(this);
+        queryRow.setOrientation(LinearLayout.HORIZONTAL);
+        queryRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        queryButton = makeButton("查询", true);
+        LinearLayout.LayoutParams queryParams = new LinearLayout.LayoutParams(
+                0, dp(44), 1f);
+        queryParams.rightMargin = dp(4);
+        queryRow.addView(queryButton, queryParams);
+        randomButton = makeButton("随机", false);
+        LinearLayout.LayoutParams randomParams = new LinearLayout.LayoutParams(
+                0, dp(44), 1f);
+        randomParams.leftMargin = dp(4);
+        queryRow.addView(randomButton, randomParams);
         root.addView(queryRow);
 
         LinearLayout filterRow = new LinearLayout(this);
@@ -219,10 +266,12 @@ public class MainActivity extends Activity {
         filterInput.setSingleLine(true);
         filterInput.setTextSize(12);
         filterRow.addView(filterInput, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        listToggleButton = makeButton("收起列表");
-        filterRow.addView(listToggleButton, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+                0, dp(44), 1f));
+        listToggleButton = makeButton("收起列表", false);
+        LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
+        toggleParams.leftMargin = dp(6);
+        filterRow.addView(listToggleButton, toggleParams);
         root.addView(filterRow);
 
         listPanel = new LinearLayout(this);
@@ -255,13 +304,17 @@ public class MainActivity extends Activity {
 
         LinearLayout actionRow = new LinearLayout(this);
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
-        openButton = makeButton("打开原文");
+        openButton = makeButton("打开原文", true);
         openButton.setEnabled(false);
-        actionRow.addView(openButton, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        refreshButton = makeButton("刷新");
-        actionRow.addView(refreshButton, new LinearLayout.LayoutParams(
-                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(
+                0, dp(44), 1f);
+        openParams.rightMargin = dp(4);
+        actionRow.addView(openButton, openParams);
+        refreshButton = makeButton("刷新", false);
+        LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(
+                0, dp(44), 1f);
+        refreshParams.leftMargin = dp(4);
+        actionRow.addView(refreshButton, refreshParams);
         detailPanel.addView(actionRow);
 
         statusView = new TextView(this);
@@ -451,6 +504,15 @@ public class MainActivity extends Activity {
                 }
             }
             rebuildRows();
+            if (groups.isEmpty()) {
+                rows.clear();
+                adapter.notifyDataSetChanged();
+                listStatusView.setText("索引为空，点「刷新列表」重试");
+                if (!hasDetail) {
+                    renderPlaceholder("索引为空；可直接输入编号查询，或点「刷新列表」重试。");
+                }
+                return;
+            }
             int total = obj.optInt("total", allEntries.size());
             listStatusView.setText("索引 " + total + " 条 · " + groups.size() + " 个分组");
             if (!hasDetail) {
@@ -962,18 +1024,18 @@ public class MainActivity extends Activity {
                 view.setTypeface(Typeface.DEFAULT_BOLD);
                 view.setTextColor(ACCENT_DARK);
                 view.setBackgroundColor(GROUP_BG);
-                view.setPadding(dp(8), dp(7), dp(8), dp(7));
+                view.setPadding(dp(8), dp(10), dp(8), dp(10));
             } else {
                 String prefix = "";
                 if (row.childCount > 0) {
                     prefix = row.expanded ? "▾ " : "▸ ";
                 }
                 view.setText(prefix + row.entry.title);
-                view.setTextSize(12);
+                view.setTextSize(13);
                 view.setTypeface(Typeface.DEFAULT);
                 view.setTextColor(INK);
                 view.setBackgroundColor(row.entry.slug.equals(selectedSlug) ? SELECTED_BG : PAPER);
-                view.setPadding(dp(10 + row.depth * 15), dp(7), dp(8), dp(7));
+                view.setPadding(dp(10 + row.depth * 15), dp(10), dp(8), dp(10));
             }
             return view;
         }
