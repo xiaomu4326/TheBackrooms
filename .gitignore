@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Runtime data
+cache/
+*.log
+
+# Local documentation screenshots / scratch files
+docs/
+/_*.py
+/_*.txt
+/_*.png
+/_*.jpg
+
+# PyInstaller
+build/
+dist/
+*.spec
+
+# Release assets (uploaded to GitHub Releases, not committed)
+release/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/keys/
+*.jks
+*.keystore
+*.apk
+*.aab
+
+# Editors / OS
+.idea/
+.vscode/
+*.iml
+Thumbs.db
+.DS_Store

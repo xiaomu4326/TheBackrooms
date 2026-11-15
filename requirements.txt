@@ -1,0 +1,2 @@
+# 本项目仅使用 Python 标准库（urllib / html.parser / tkinter 等）。
+# 无需安装任何第三方依赖，此文件仅用于说明。
