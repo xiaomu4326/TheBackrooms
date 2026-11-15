@@ -8,7 +8,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -25,9 +24,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ListView;
-import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
@@ -65,8 +64,6 @@ public class MainActivity extends Activity {
     private final Random random = new Random();
 
     private LinearLayout listPanel;
-    private LinearLayout detailPanel;
-    private LinearLayout detailContainer;
     private ListView listView;
     private EditText queryInput;
     private EditText filterInput;
@@ -75,12 +72,9 @@ public class MainActivity extends Activity {
     private Button randomButton;
     private Button refreshIndexButton;
     private Button aboutButton;
-    private Button openButton;
-    private Button refreshButton;
     private Button listToggleButton;
     private TextView listStatusView;
     private TextView statusView;
-    private ScrollView detailScroll;
 
     private final List<GroupNode> groups = new ArrayList<>();
     private final List<Entry> allEntries = new ArrayList<>();
@@ -91,7 +85,6 @@ public class MainActivity extends Activity {
 
     private RowAdapter adapter;
     private String selectedSlug = "";
-    private String currentUrl = "";
     private String lastQuery = "";
     private String lastEntrySlug = "";
     private String lastEntryTitle = "";
@@ -99,7 +92,6 @@ public class MainActivity extends Activity {
     private int indexGeneration = 0;
     private int detailGeneration = 0;
     private boolean indexLoading = false;
-    private boolean hasDetail = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -300,39 +292,11 @@ public class MainActivity extends Activity {
         root.addView(listPanel, new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        detailPanel = new LinearLayout(this);
-        detailPanel.setOrientation(LinearLayout.VERTICAL);
-        detailScroll = new ScrollView(this);
-        detailContainer = new LinearLayout(this);
-        detailContainer.setOrientation(LinearLayout.VERTICAL);
-        detailContainer.setPadding(dp(4), dp(4), dp(4), dp(4));
-        detailScroll.addView(detailContainer);
-        detailPanel.addView(detailScroll, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-
-        LinearLayout actionRow = new LinearLayout(this);
-        actionRow.setOrientation(LinearLayout.HORIZONTAL);
-        openButton = makeButton("打开原文", true);
-        openButton.setEnabled(false);
-        LinearLayout.LayoutParams openParams = new LinearLayout.LayoutParams(
-                0, dp(44), 1f);
-        openParams.rightMargin = dp(4);
-        actionRow.addView(openButton, openParams);
-        refreshButton = makeButton("刷新", false);
-        LinearLayout.LayoutParams refreshParams = new LinearLayout.LayoutParams(
-                0, dp(44), 1f);
-        refreshParams.leftMargin = dp(4);
-        actionRow.addView(refreshButton, refreshParams);
-        detailPanel.addView(actionRow);
-
         statusView = new TextView(this);
         statusView.setTextSize(10);
         statusView.setTextColor(MUTED);
-        statusView.setPadding(0, dp(2), 0, 0);
-        detailPanel.addView(statusView);
-
-        root.addView(detailPanel, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.25f));
+        statusView.setPadding(dp(2), dp(4), dp(2), dp(2));
+        root.addView(statusView);
 
         adapter = new RowAdapter();
         listView.setAdapter(adapter);
@@ -370,12 +334,6 @@ public class MainActivity extends Activity {
         randomButton.setOnClickListener(v -> openRandom());
         aboutButton.setOnClickListener(v ->
                 startActivity(new Intent(MainActivity.this, AboutActivity.class)));
-        refreshButton.setOnClickListener(v -> refreshDetail());
-        openButton.setOnClickListener(v -> {
-            if (!currentUrl.isEmpty()) {
-                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(currentUrl)));
-            }
-        });
         listToggleButton.setOnClickListener(v -> toggleList());
 
         sourceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
@@ -395,7 +353,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        renderPlaceholder("索引加载后，点层级打开详情页。");
+        statusView.setText("索引加载后，点层级打开详情页。");
         listStatusView.setText("索引加载中…");
     }
 
@@ -403,9 +361,6 @@ public class MainActivity extends Activity {
         boolean visible = listPanel.getVisibility() == View.VISIBLE;
         listPanel.setVisibility(visible ? View.GONE : View.VISIBLE);
         listToggleButton.setText(visible ? "显示列表" : "收起列表");
-        LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) detailPanel.getLayoutParams();
-        params.weight = visible ? 1.9f : 1.25f;
-        detailPanel.setLayoutParams(params);
     }
 
     private void hideKeyboard() {
@@ -429,16 +384,12 @@ public class MainActivity extends Activity {
         expandedParents.clear();
         expandedSections.clear();
         selectedSlug = "";
-        currentUrl = "";
         lastEntrySlug = "";
         lastEntryTitle = "";
         lastQuery = "";
         filterInput.setText("");
-        hasDetail = false;
-        openButton.setEnabled(false);
         adapter.notifyDataSetChanged();
-        renderPlaceholder("正在加载索引…");
-        statusView.setText("");
+        statusView.setText("正在加载索引…");
         listStatusView.setText("索引加载中…");
     }
 
@@ -526,16 +477,12 @@ public class MainActivity extends Activity {
                 rows.clear();
                 adapter.notifyDataSetChanged();
                 listStatusView.setText("索引为空，点「刷新列表」重试");
-                if (!hasDetail) {
-                    renderPlaceholder("索引为空；可直接输入编号查询，或点「刷新列表」重试。");
-                }
+                statusView.setText("索引为空；可直接输入编号查询，或点「刷新列表」重试。");
                 return;
             }
             int total = obj.optInt("total", allEntries.size());
             listStatusView.setText("索引 " + total + " 条 · " + groups.size() + " 个分组");
-            if (!hasDetail) {
-                renderPlaceholder("点层级打开详情页；带 ▸ 的上级先展开，长按可看该上级详情。");
-            }
+            statusView.setText("点层级打开详情页；带 ▸ 的上级先展开，长按可看该上级详情。");
         } catch (Exception error) {
             listStatusView.setText("索引解析失败");
             statusView.setText(String.valueOf(error));
@@ -851,44 +798,14 @@ public class MainActivity extends Activity {
         loadEntry(entry, false);
     }
 
-    private void refreshDetail() {
-        if (!lastEntrySlug.isEmpty()) {
-            for (Entry entry : allEntries) {
-                if (entry.slug.equals(lastEntrySlug)) {
-                    loadEntry(entry, true);
-                    return;
-                }
-            }
-            Entry entry = new Entry();
-            entry.slug = lastEntrySlug;
-            entry.title = lastEntryTitle.isEmpty() ? lastEntrySlug : lastEntryTitle;
-            loadEntry(entry, true);
-            return;
-        }
-        if (!lastQuery.isEmpty()) {
-            doQuery(true);
-            return;
-        }
-        statusView.setText("还没有可刷新的内容");
-    }
-
     private void setDetailBusy(boolean busy) {
         queryButton.setEnabled(!busy);
         randomButton.setEnabled(!busy);
-        refreshButton.setEnabled(!busy);
     }
 
     private void showError(String message) {
-        hasDetail = true;
-        detailContainer.removeAllViews();
-        TextView view = new TextView(this);
-        view.setText("查询失败：\n" + message);
-        view.setTextSize(13);
-        view.setTextColor(Color.parseColor("#9B2C1F"));
-        view.setPadding(dp(4), dp(8), dp(4), dp(8));
-        detailContainer.addView(view);
-        statusView.setText("没有拿到数据");
-        openButton.setEnabled(false);
+        statusView.setText("查询失败：" + message);
+        Toast.makeText(this, "查询失败：" + message, Toast.LENGTH_LONG).show();
     }
 
     private void showDetail(String json) {
@@ -898,11 +815,8 @@ public class MainActivity extends Activity {
                 showError(obj.optString("error", "未知错误"));
                 return;
             }
-            currentUrl = obj.optString("url", "");
-            renderDetail(obj);
-            openButton.setEnabled(!currentUrl.isEmpty());
             statusView.setText(obj.optBoolean("cached", false)
-                    ? "已加载（本地缓存）" : "已加载（在线）");
+                    ? "已打开详情页（本地缓存）" : "已打开详情页（在线）");
             String pageKey = obj.optString("page_key", "");
             if (!pageKey.isEmpty()) {
                 selectBySlug(pageKey);
@@ -927,158 +841,6 @@ public class MainActivity extends Activity {
         intent.putExtra("query", query);
         intent.putExtra("proxy", proxyUrl());
         startActivity(intent);
-    }
-
-    private void renderDetail(JSONObject obj) {
-        hasDetail = true;
-        detailContainer.removeAllViews();
-
-        String label = obj.optString("label", "");
-        String alias = obj.optString("alias", "");
-        String title = label.isEmpty() ? obj.optString("title") : label;
-        if (!alias.isEmpty()) {
-            title += "  “" + alias + "”";
-        }
-
-        TextView titleView = new TextView(this);
-        titleView.setText(title);
-        titleView.setTextSize(20);
-        titleView.setTypeface(Typeface.DEFAULT_BOLD);
-        titleView.setTextColor(INK);
-        titleView.setPadding(dp(2), dp(2), dp(2), dp(8));
-        detailContainer.addView(titleView);
-
-        String code = obj.optString("code", "");
-        String revision = obj.optString("revision", "");
-        String updatedAt = obj.optString("updated_at", "");
-        if (!code.isEmpty() || !revision.isEmpty() || !updatedAt.isEmpty()) {
-            StringBuilder metaText = new StringBuilder();
-            if (!code.isEmpty()) {
-                metaText.append("编号 ").append(code);
-            }
-            if (!revision.isEmpty()) {
-                if (metaText.length() > 0) {
-                    metaText.append(" · ");
-                }
-                metaText.append("页面版本 ").append(revision);
-            }
-            if (!updatedAt.isEmpty()) {
-                if (metaText.length() > 0) {
-                    metaText.append(" · ");
-                }
-                metaText.append("最后编辑 ").append(updatedAt);
-            }
-            TextView meta = new TextView(this);
-            meta.setText(metaText.toString());
-            meta.setTextSize(10);
-            meta.setTextColor(MUTED);
-            meta.setPadding(dp(2), 0, dp(2), dp(6));
-            detailContainer.addView(meta);
-        }
-
-        LinearLayout classCard = new LinearLayout(this);
-        classCard.setOrientation(LinearLayout.VERTICAL);
-        int background;
-        try {
-            background = Color.parseColor(obj.optString("class_color", "#F7E375"));
-        } catch (Exception error) {
-            background = Color.parseColor("#F7E375");
-        }
-        classCard.setBackgroundColor(background);
-        classCard.setPadding(dp(12), dp(10), dp(12), dp(10));
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cardParams.bottomMargin = dp(8);
-        classCard.setLayoutParams(cardParams);
-
-        double luminance = 0.299 * Color.red(background)
-                + 0.587 * Color.green(background) + 0.114 * Color.blue(background);
-        int classTextColor = luminance < 140 ? Color.WHITE : INK;
-
-        TextView classText = new TextView(this);
-        classText.setText("生存难度：" + obj.optString("class_text", "未标注"));
-        classText.setTextSize(17);
-        classText.setTypeface(Typeface.DEFAULT_BOLD);
-        classText.setTextColor(classTextColor);
-        classCard.addView(classText);
-
-        JSONArray items = obj.optJSONArray("class_items");
-        if (items == null || items.length() == 0) {
-            TextView empty = new TextView(this);
-            empty.setText("该页面未列出难度分项");
-            empty.setTextSize(12);
-            empty.setTextColor(classTextColor);
-            classCard.addView(empty);
-        } else {
-            for (int i = 0; i < items.length(); i++) {
-                TextView item = new TextView(this);
-                item.setText("· " + items.optString(i));
-                item.setTextSize(13);
-                item.setTextColor(classTextColor);
-                item.setPadding(0, dp(2), 0, 0);
-                classCard.addView(item);
-            }
-        }
-        detailContainer.addView(classCard);
-
-        JSONArray tags = obj.optJSONArray("tags");
-        if (tags != null && tags.length() > 0) {
-            TextView tagsView = new TextView(this);
-            tagsView.setTextSize(12);
-            tagsView.setTextColor(Color.parseColor("#6F675A"));
-            StringBuilder builder = new StringBuilder("标签：");
-            for (int i = 0; i < tags.length(); i++) {
-                if (i > 0) {
-                    builder.append(" / ");
-                }
-                builder.append(tags.optString(i));
-            }
-            tagsView.setText(builder.toString());
-            tagsView.setPadding(dp(2), 0, dp(2), dp(8));
-            detailContainer.addView(tagsView);
-        }
-
-        String summary = obj.optString("summary", "");
-        if (!summary.isEmpty()) {
-            TextView summaryTitle = new TextView(this);
-            summaryTitle.setText("简介");
-            summaryTitle.setTextSize(13);
-            summaryTitle.setTypeface(Typeface.DEFAULT_BOLD);
-            summaryTitle.setTextColor(MUTED);
-            summaryTitle.setPadding(dp(2), dp(2), dp(2), dp(2));
-            detailContainer.addView(summaryTitle);
-
-            TextView summaryView = new TextView(this);
-            summaryView.setText(summary);
-            summaryView.setTextSize(13);
-            summaryView.setTextColor(Color.parseColor("#3B362C"));
-            summaryView.setLineSpacing(dp(2), 1.15f);
-            summaryView.setTextIsSelectable(true);
-            summaryView.setPadding(dp(2), 0, dp(2), dp(8));
-            detailContainer.addView(summaryView);
-        }
-
-        TextView urlView = new TextView(this);
-        urlView.setText(currentUrl);
-        urlView.setTextSize(10);
-        urlView.setTextColor(Color.parseColor("#3A6B8A"));
-        urlView.setTextIsSelectable(true);
-        urlView.setPadding(dp(2), dp(4), dp(2), dp(4));
-        detailContainer.addView(urlView);
-
-        detailScroll.post(() -> detailScroll.scrollTo(0, 0));
-    }
-
-    private void renderPlaceholder(String text) {
-        hasDetail = false;
-        detailContainer.removeAllViews();
-        TextView view = new TextView(this);
-        view.setText(text);
-        view.setTextSize(13);
-        view.setTextColor(MUTED);
-        view.setPadding(dp(4), dp(12), dp(4), dp(12));
-        detailContainer.addView(view);
-        openButton.setEnabled(false);
     }
 
     private static class Entry {
