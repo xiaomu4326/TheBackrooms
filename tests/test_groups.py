@@ -93,6 +93,28 @@ class LevelPartsTest(unittest.TestCase):
         )
 
 
+class BuildFamiliesTest(unittest.TestCase):
+    def test_tree_and_counts(self) -> None:
+        entries = [
+            entry("Level 0", "Level 0"),
+            entry("Level 0.1", "Level 0.1"),
+            entry("Level 1", "Level 1"),
+            entry("Level 1.1", "Level 1.1"),
+            entry("whale", "🐋", ("hidden",)),
+            entry("joke", "Joke Level 1", ("joke",)),
+        ]
+        families = groups.build_families(
+            entries, "fandom", lambda items: sorted(items, key=lambda e: e.title)
+        )
+        self.assertEqual(
+            [child.title for child in families["normal"]["children"][("normal", "0")]],
+            ["Level 0.1"],
+        )
+        self.assertEqual(groups.family_count("normal", families["normal"]), 4)
+        self.assertEqual(len(families["hidden"]["mains"]), 1)
+        self.assertEqual(len(families["joke"]["mains"]), 1)
+
+
 class SortTest(unittest.TestCase):
     def test_c_levels_sort_by_number(self) -> None:
         entries = [

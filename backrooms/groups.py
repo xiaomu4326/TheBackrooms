@@ -119,6 +119,59 @@ def sort_children(entries: list[IndexEntry], top: str) -> list[IndexEntry]:
     return sorted(entries, key=lambda e: _number_key(prefix, e.title))
 
 
+def build_families(entries: list[IndexEntry], source: str, sorter) -> dict[str, dict]:
+    """把子层级挂到上级层级下；桌面端和 Android 端共用同一套树结构。"""
+    families: dict[str, dict] = {
+        key: {"mains": [], "children": {}}
+        for key in top_group_order(source)
+    }
+    main_index: dict[tuple[str, str], IndexEntry] = {}
+    pending: list[tuple[str, str, IndexEntry]] = []
+
+    for entry in entries:
+        top, base, is_sub = level_parts(entry, source)
+        if top == "other":
+            families["other"]["mains"].append(entry)
+            continue
+        if is_sub:
+            pending.append((top, base, entry))
+            continue
+        families[top]["mains"].append(entry)
+        main_index.setdefault((top, base), entry)
+
+    for top, base, entry in pending:
+        if (top, base) in main_index:
+            families[top]["children"].setdefault((top, base), []).append(entry)
+        else:
+            families["orphan"]["mains"].append(entry)
+
+    for top in ("normal", "c", "zh"):
+        family = families[top]
+        family["canonical"] = {
+            signature: parent.slug
+            for signature, parent in main_index.items()
+            if signature[0] == top
+        }
+        family["mains"] = sort_group(family["mains"], top, sorter)
+        for signature, children in family["children"].items():
+            family["children"][signature] = sort_children(children, top)
+
+    families["orphan"]["mains"] = sort_children(families["orphan"]["mains"], "normal")
+    for top in ("hidden", "joke", "other"):
+        families[top]["mains"] = sorter(families[top]["mains"])
+    return families
+
+
+def family_count(key: str, family: dict) -> int:
+    if not family:
+        return 0
+    if key in ("normal", "c", "zh"):
+        return len(family["mains"]) + sum(
+            len(children) for children in family["children"].values()
+        )
+    return len(family["mains"])
+
+
 def default_expanded() -> dict[str, bool]:
     return dict(_DEFAULT_EXPANDED)
 

@@ -15,6 +15,7 @@ docs/
 /_*.txt
 /_*.png
 /_*.jpg
+/_*.xml
 
 # PyInstaller
 build/

@@ -562,55 +562,11 @@ class BackroomsApp(tk.Tk):
 
     def _build_families(self, entries: list[IndexEntry]) -> dict[str, dict]:
         """把子层级挂到各自的上级层级下；找不到上级的进「子层级」组。"""
-        families: dict[str, dict] = {
-            key: {"mains": [], "children": {}}
-            for key in groups.top_group_order(self.source_key)
-        }
-        main_index: dict[tuple[str, str], IndexEntry] = {}
-        pending: list[tuple[str, str, IndexEntry]] = []
-
-        for entry in entries:
-            top, base, is_sub = groups.level_parts(entry, self.source_key)
-            if top == "other":
-                families["other"]["mains"].append(entry)
-                continue
-            if is_sub:
-                pending.append((top, base, entry))
-                continue
-            families[top]["mains"].append(entry)
-            main_index.setdefault((top, base), entry)
-
-        for top, base, entry in pending:
-            if (top, base) in main_index:
-                families[top]["children"].setdefault((top, base), []).append(entry)
-            else:
-                families["orphan"]["mains"].append(entry)
-
-        for top in ("normal", "c", "zh"):
-            family = families[top]
-            family["canonical"] = {
-                signature: parent.slug
-                for signature, parent in main_index.items()
-                if signature[0] == top
-            }
-            family["mains"] = groups.sort_group(
-                family["mains"], top, self.client.sort_entries
-            )
-            for signature, children in family["children"].items():
-                family["children"][signature] = groups.sort_children(children, top)
-        families["orphan"]["mains"] = groups.sort_children(families["orphan"]["mains"], "normal")
-        families["other"]["mains"] = self.client.sort_entries(families["other"]["mains"])
-        return families
+        return groups.build_families(entries, self.source_key, self.client.sort_entries)
 
     @staticmethod
     def _family_count(key: str, family: dict) -> int:
-        if not family:
-            return 0
-        if key in ("normal", "c", "zh"):
-            return len(family["mains"]) + sum(
-                len(children) for children in family["children"].values()
-            )
-        return len(family["mains"])
+        return groups.family_count(key, family)
 
     def _add_group_row(self, key: str, count: int) -> None:
         arrow = "▾" if self._expanded.get(key) else "▸"
