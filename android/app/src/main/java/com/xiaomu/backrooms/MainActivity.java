@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
     private Button queryButton;
     private Button randomButton;
     private Button refreshIndexButton;
-    private Button aboutButton;
+    private Button settingsButton;
     private Button listToggleButton;
     private TextView listStatusView;
     private TextView statusView;
@@ -207,7 +207,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("The Backrooms · Wikidot / Fandom · v1.0.1");
+        subtitle.setText("The Backrooms · Wikidot / Fandom · v1.0.2");
         subtitle.setTextSize(10);
         subtitle.setTextColor(MUTED);
         subtitle.setPadding(0, 0, 0, dp(6));
@@ -228,11 +228,11 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
         refreshIndexParams.leftMargin = dp(6);
         sourceRow.addView(refreshIndexButton, refreshIndexParams);
-        aboutButton = makeButton("关于", false);
-        LinearLayout.LayoutParams aboutParams = new LinearLayout.LayoutParams(
+        settingsButton = makeButton("设置", false);
+        LinearLayout.LayoutParams settingsParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, dp(44));
-        aboutParams.leftMargin = dp(6);
-        sourceRow.addView(aboutButton, aboutParams);
+        settingsParams.leftMargin = dp(6);
+        sourceRow.addView(settingsButton, settingsParams);
         root.addView(sourceRow);
 
         queryInput = new EditText(this);
@@ -332,8 +332,8 @@ public class MainActivity extends Activity {
         queryButton.setOnClickListener(v -> doQuery(false));
         refreshIndexButton.setOnClickListener(v -> loadIndex(true));
         randomButton.setOnClickListener(v -> openRandom());
-        aboutButton.setOnClickListener(v ->
-                startActivity(new Intent(MainActivity.this, AboutActivity.class)));
+        settingsButton.setOnClickListener(v ->
+                startActivity(new Intent(MainActivity.this, SettingsActivity.class)));
         listToggleButton.setOnClickListener(v -> toggleList());
 
         sourceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {

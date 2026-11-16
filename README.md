@@ -1,6 +1,6 @@
 # 后室层级档案 · Backrooms CN 查询器
 
-版本 **1.0.1**
+版本 **1.0.2**
 
 同时查询 **Wikidot 中文后室** 与 **Fandom 中文后室** 的层级档案。桌面版用 Tkinter 编写，
 Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
@@ -15,8 +15,8 @@ Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
 
 | 文件 | 平台 |
 |---|---|
-| `BackroomsLevelViewer-1.0.1-win64.exe` | Windows 10/11（64 位） |
-| `BackroomsLevelViewer-1.0.1.apk` | Android 7.0+（arm64-v8a / x86_64） |
+| `BackroomsLevelViewer-1.0.2-win64.exe` | Windows 10/11（64 位） |
+| `BackroomsLevelViewer-1.0.2.apk` | Android 7.0+（arm64-v8a / x86_64） |
 
 ## 功能
 
@@ -27,7 +27,7 @@ Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
 - 普通层级下再按 0、1–100、101–200……分段，Fandom 与 Wikidot 一致
 - 子层级树形嵌套：点 `Level 0` 展开 `Level 0.1`、`0.2`……
 - Fandom `displaytitle` 名称直接进入索引；隐秘层级取官方列表，玩笑层级按标签/标题识别
-- 本地缓存，重复查询不再请求站点
+- 本地缓存永久保留，不会自动过期或删除；手动刷新才更新，设置页可查看占用并清理
 
 ## 运行源码
 
@@ -52,7 +52,7 @@ APK 与桌面版共用同一套 `backrooms` 解析核心和分组树：
 - 列表筛选、随机层级、刷新索引、刷新当前页面
 - 详情：名称、编号、页面版本、最后编辑时间、生存难度、三条细则、标签、简介、原文链接
 - 独立全屏详情页：纸感配色 + 白色圆角卡片，返回后保留列表状态
-- 关于页：应用图标、简介、版本、许可证、GitHub 仓库链接（EXE / APK 都有）
+- 设置页：缓存统计、手动清理缓存、关于（图标、版本、许可证、GitHub 仓库）
 - 首次查询优先直连页面；失败再查索引
 - 读取 Android 系统代理设置，配合代理可访问 Fandom
 - Fandom 在中国大陆常被 DNS 污染或拦截，需要自备网络环境或代理

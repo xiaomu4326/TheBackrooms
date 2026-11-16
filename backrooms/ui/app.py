@@ -10,7 +10,7 @@ import tkinter as tk
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from .. import config, groups
 from ..base import BaseClient
@@ -113,7 +113,7 @@ class BackroomsApp(tk.Tk):
         self._render_placeholder()
         self.bind("<Control-f>", lambda _e: self.search_entry.focus_set())
         self.bind("<Control-r>", lambda _e: self._refresh_current())
-        self.bind("<F1>", lambda _e: self._show_about())
+        self.bind("<F1>", lambda _e: self._show_settings())
         self.after(120, self.search_entry.focus_set)
         self._poll()
         self.after(150, self._load_index_async)
@@ -161,10 +161,121 @@ class BackroomsApp(tk.Tk):
         hint_row.pack(anchor="e", pady=(6, 0))
         tk.Label(hint_row, text="Enter 查询 · 双击列表打开 · Esc 清空", bg=th.BG,
                  fg=th.MUTED, font=self.theme.font_small).pack(side="left")
-        about = tk.Label(hint_row, text="关于", bg=th.BG, fg=th.ACCENT_DARK,
+        about = tk.Label(hint_row, text="设置", bg=th.BG, fg=th.ACCENT_DARK,
                          font=(self.theme.family, 9, "bold"), cursor="hand2")
         about.pack(side="left", padx=(14, 0))
-        about.bind("<Button-1>", lambda _event: self._show_about())
+        about.bind("<Button-1>", lambda _event: self._show_settings())
+
+    @staticmethod
+    def _format_bytes(size: int) -> str:
+        if size < 1024:
+            return f"{size} B"
+        if size < 1024 ** 2:
+            return f"{size / 1024:.1f} KB"
+        if size < 1024 ** 3:
+            return f"{size / 1024 ** 2:.1f} MB"
+        return f"{size / 1024 ** 3:.2f} GB"
+
+    def _cache_stats_text(self) -> str:
+        files = [path for path in config.CACHE_DIR.glob("*.json") if path.is_file()]
+        size = 0
+        for path in files:
+            try:
+                size += path.stat().st_size
+            except OSError:
+                pass
+        return f"{len(files)} 个缓存文件 · {self._format_bytes(size)}"
+
+    def _clear_cache(self) -> int:
+        removed = 0
+        for path in config.CACHE_DIR.glob("*"):
+            if not path.is_file():
+                continue
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                pass
+        self._generation += 1
+        self.client = create_client(self.source_key)
+        self.entries = []
+        self.filtered = []
+        self.current = None
+        self._expanded = groups.default_expanded()
+        self._expanded_parents = set()
+        self._expanded_ranges = set()
+        self.listbox.delete(0, "end")
+        self._rows = []
+        self.count_var.set("0")
+        self.query_var.set("")
+        self._render_placeholder()
+        self._set_status(f"缓存已清理（删除 {removed} 个文件）")
+        return removed
+
+    def _show_settings(self) -> None:
+        win = tk.Toplevel(self)
+        win.title("设置 · 后室层级档案")
+        win.configure(bg=th.BG)
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        win.geometry("420x500")
+
+        card = tk.Frame(win, bg=th.PANEL, highlightthickness=1,
+                        highlightbackground=th.LINE)
+        card.pack(fill="both", expand=True, padx=14, pady=14)
+        inner = tk.Frame(card, bg=th.PANEL, padx=20, pady=18)
+        inner.pack(fill="both", expand=True)
+
+        tk.Label(inner, text="设置", bg=th.PANEL, fg=th.INK,
+                 font=(self.theme.family, 18, "bold")).pack(anchor="w")
+        tk.Label(inner, text="缓存", bg=th.PANEL, fg=th.ACCENT_DARK,
+                 font=(self.theme.family, 11, "bold")).pack(anchor="w", pady=(18, 4))
+        tk.Label(
+            inner,
+            text="缓存永久保留，不会自动过期或删除。只有手动清理，或点击刷新按钮时才更新。",
+            bg=th.PANEL, fg=th.MUTED, font=self.theme.font_small,
+            wraplength=340, justify="left",
+        ).pack(anchor="w")
+
+        stats_var = tk.StringVar(value=self._cache_stats_text())
+        tk.Label(inner, textvariable=stats_var, bg=th.PANEL, fg=th.INK,
+                 font=(self.theme.family, 11, "bold")).pack(anchor="w", pady=(10, 8))
+
+        actions = tk.Frame(inner, bg=th.PANEL)
+        actions.pack(fill="x")
+        def clear():
+            if not messagebox.askyesno(
+                "清理缓存",
+                "清理后，下次查询需要重新从站点下载。确定清理吗？",
+                parent=win,
+            ):
+                return
+            self._clear_cache()
+            stats_var.set(self._cache_stats_text())
+
+        ttk.Button(actions, text="清理缓存", style="Accent.TButton",
+                   command=clear).pack(side="left")
+        ttk.Button(actions, text="刷新统计", style="Ghost.TButton",
+                   command=lambda: stats_var.set(self._cache_stats_text())).pack(
+            side="left", padx=(8, 0))
+
+        tk.Frame(inner, bg=th.LINE, height=1).pack(fill="x", pady=(18, 14))
+        tk.Label(inner, text="关于", bg=th.PANEL, fg=th.ACCENT_DARK,
+                 font=(self.theme.family, 11, "bold")).pack(anchor="w", pady=(0, 4))
+        tk.Label(inner, text="版本、许可证与 GitHub 仓库", bg=th.PANEL,
+                 fg=th.MUTED, font=self.theme.font_small).pack(anchor="w")
+        ttk.Button(inner, text="打开关于", style="Ghost.TButton",
+                   command=lambda: (win.destroy(), self._show_about())).pack(
+            anchor="w", pady=(8, 0))
+
+        ttk.Button(inner, text="返回", style="Ghost.TButton",
+                   command=win.destroy).pack(side="bottom", anchor="e", pady=(16, 0))
+        win.bind("<Escape>", lambda _event: win.destroy())
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(0, x)}+{max(0, y)}")
 
     def _show_about(self) -> None:
         win = tk.Toplevel(self)

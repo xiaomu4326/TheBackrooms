@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 from urllib.parse import quote
 
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 APP_TITLE = f"后室层级档案 · Backrooms CN 查询器 v{APP_VERSION}"
 APP_SUBTITLE = "数据来源：backrooms-wiki-cn.wikidot.com"
 
@@ -22,8 +22,10 @@ USER_AGENT = (
 
 REQUEST_TIMEOUT = 25
 MIN_REQUEST_INTERVAL = 0.7
-CACHE_TTL = 12 * 3600
-INDEX_TTL = 24 * 3600
+# 缓存永久保留，只有手动刷新或设置页清理才会更新/删除。
+# -1 表示不做时间过期判断，避免大陆网络慢时反复重新抓取。
+CACHE_TTL = -1
+INDEX_TTL = -1
 
 CACHE_DIR = pathlib.Path(__file__).resolve().parent.parent / "cache"
 

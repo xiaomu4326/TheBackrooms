@@ -74,6 +74,43 @@ def _payload(info) -> dict:
     }
 
 
+def cache_stats() -> str:
+    """返回缓存文件数量与占用字节数。"""
+    try:
+        files = [path for path in config.CACHE_DIR.glob("*.json") if path.is_file()]
+        total = 0
+        for path in files:
+            try:
+                total += path.stat().st_size
+            except OSError:
+                pass
+        return json.dumps(
+            {"ok": True, "files": len(files), "bytes": total}, ensure_ascii=False
+        )
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def clear_cache() -> str:
+    """手动清理磁盘缓存，并丢弃内存中的客户端/索引。"""
+    try:
+        removed = 0
+        for path in config.CACHE_DIR.iterdir():
+            if path.is_file():
+                try:
+                    path.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+        _clients.clear()
+        return json.dumps(
+            {"ok": True, "removed": removed, "files": 0, "bytes": 0},
+            ensure_ascii=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
 def _direct_locator(source: str, query: str) -> str:
     """数字/编号查询直接猜页面地址，避免首查加载整份索引。"""
     text = re.sub(r"(?i)^level\s*", "", query.strip()).strip()
