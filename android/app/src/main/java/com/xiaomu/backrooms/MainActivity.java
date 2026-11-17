@@ -59,7 +59,8 @@ public class MainActivity extends Activity {
     private static final int GROUP_BG = Color.parseColor("#F7F1E1");
     private static final int SELECTED_BG = Color.parseColor("#E8D8B0");
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService indexExecutor = Executors.newSingleThreadExecutor();
+    private final ExecutorService detailExecutor = Executors.newCachedThreadPool();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Random random = new Random();
 
@@ -399,7 +400,7 @@ public class MainActivity extends Activity {
         indexLoading = true;
         refreshIndexButton.setEnabled(false);
         listStatusView.setText(force ? "正在刷新索引…" : "索引加载中…");
-        executor.execute(() -> {
+        indexExecutor.execute(() -> {
             try {
                 String json = Python.getInstance().getModule("mobile")
                         .callAttr("index", source, force).toString();
@@ -736,7 +737,7 @@ public class MainActivity extends Activity {
         hideKeyboard();
         setDetailBusy(true);
         statusView.setText("正在查询「" + query + "」…");
-        executor.execute(() -> {
+        detailExecutor.execute(() -> {
             try {
                 String json = Python.getInstance().getModule("mobile")
                         .callAttr("fetch", source, query, force).toString();
@@ -766,7 +767,7 @@ public class MainActivity extends Activity {
         queryInput.setText(entry.title);
         setDetailBusy(true);
         statusView.setText("正在打开「" + entry.title + "」…");
-        executor.execute(() -> {
+        detailExecutor.execute(() -> {
             try {
                 String json = Python.getInstance().getModule("mobile")
                         .callAttr("fetch_slug", source, entry.slug, entry.title, force).toString();
@@ -799,8 +800,9 @@ public class MainActivity extends Activity {
     }
 
     private void setDetailBusy(boolean busy) {
-        queryButton.setEnabled(!busy);
-        randomButton.setEnabled(!busy);
+        // 加载中仍允许切换层级/重新查询；旧请求由 detailGeneration 丢弃。
+        queryButton.setEnabled(true);
+        randomButton.setEnabled(true);
     }
 
     private void showError(String message) {

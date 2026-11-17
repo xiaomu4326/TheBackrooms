@@ -88,6 +88,7 @@ class BackroomsApp(tk.Tk):
         self._queue: queue.Queue = queue.Queue()
         self._busy = False
         self._generation = 0
+        self._request_generation = 0
         self._index_ready = False
         self._rows: list[_Row] = []
         self._expanded: dict[str, bool] = groups.default_expanded()
@@ -500,6 +501,18 @@ class BackroomsApp(tk.Tk):
         entries = self.client.list_levels(force=force)
         self._queue.put(("index", generation, entries))
 
+    def _start_fetch(self, query: str, force: bool,
+                     entry: IndexEntry | None = None) -> None:
+        """立即开始新请求；旧请求返回时按编号丢弃，不阻塞切换。"""
+        self._request_generation += 1
+        request_id = self._request_generation
+        self._set_busy(True, f"正在打开「{entry.title}」…" if entry else f"正在查询「{query}」…")
+        threading.Thread(
+            target=self._fetch_worker,
+            args=(query, force, entry, request_id),
+            daemon=True,
+        ).start()
+
     def _do_search(self) -> None:
         query = self.query_var.get().strip()
         if not query:
@@ -508,10 +521,7 @@ class BackroomsApp(tk.Tk):
         if not self._index_ready:
             self._set_status("索引还在加载，请稍候再查询")
             return
-        if self._busy:
-            return
-        self._set_busy(True, f"正在查询「{query}」…")
-        threading.Thread(target=self._fetch_worker, args=(query, False), daemon=True).start()
+        self._start_fetch(query, False)
 
     def _selected_row(self) -> _Row | None:
         selection = self.listbox.curselection()
@@ -555,7 +565,7 @@ class BackroomsApp(tk.Tk):
 
     def _on_list_double(self, _event=None) -> None:
         row = self._selected_row()
-        if row is None or row.kind != "entry" or row.entry is None or self._busy:
+        if row is None or row.kind != "entry" or row.entry is None:
             return
         self.query_var.set(row.entry.title)
         self._open_entry(row.entry)
@@ -568,7 +578,7 @@ class BackroomsApp(tk.Tk):
             self._toggle_group(row.key)
         elif row.kind == "range":
             self._toggle_range(row.key)
-        elif row.entry is not None and not self._busy:
+        elif row.entry is not None:
             self.query_var.set(row.entry.title)
             self._open_entry(row.entry)
 
@@ -604,7 +614,8 @@ class BackroomsApp(tk.Tk):
         self._select_entry_row(slug)
 
     def _fetch_worker(self, query: str, force: bool,
-                      entry: IndexEntry | None = None) -> None:
+                      entry: IndexEntry | None = None,
+                      request_id: int = 0) -> None:
         client = self.client
         generation = self._generation
         try:
@@ -613,18 +624,17 @@ class BackroomsApp(tk.Tk):
             else:
                 info = client.fetch_level(query, force=force)
         except LevelNotFound as exc:
-            self._queue.put(("error", generation, str(exc)))
+            self._queue.put(("error", generation, request_id, str(exc)))
         except Exception as exc:  # noqa: BLE001 - 界面需要兜住任何抓取异常
-            self._queue.put(("error", generation, f"查询失败：{exc}"))
+            self._queue.put(("error", generation, request_id, f"查询失败：{exc}"))
         else:
-            self._queue.put(("level", generation, info))
+            self._queue.put(("level", generation, request_id, info))
 
     def _refresh_current(self) -> None:
-        if self.current is None or self._busy:
+        if self.current is None:
             return
         query = self.current.title or self.current.url
-        self._set_busy(True, "正在刷新…")
-        threading.Thread(target=self._fetch_worker, args=(query, True), daemon=True).start()
+        self._start_fetch(query, True)
 
     def _random_level(self) -> None:
         prefixes = ("level", "楼层", "層級")
@@ -637,23 +647,22 @@ class BackroomsApp(tk.Tk):
         self._open_entry(entry)
 
     def _open_entry(self, entry: IndexEntry) -> None:
-        if self._busy:
-            return
-        self._set_busy(True, f"正在打开「{entry.title}」…")
-        threading.Thread(
-            target=self._fetch_worker, args=(entry.slug, False, entry), daemon=True
-        ).start()
+        self._start_fetch(entry.slug, False, entry)
 
     # ------------------------------------------------------------------ 队列
     def _poll(self) -> None:
         try:
             while True:
-                kind, generation, payload = self._queue.get_nowait()
+                kind, generation, *rest = self._queue.get_nowait()
                 if generation != self._generation:
                     continue  # 数据源已经切换，丢弃旧结果
                 if kind == "index":
-                    self._on_index(payload)
-                elif kind == "level":
+                    self._on_index(rest[0])
+                    continue
+                request_id, payload = rest
+                if request_id != self._request_generation:
+                    continue  # 已切换到更新的页面请求
+                if kind == "level":
                     self._on_level(payload)
                 elif kind == "error":
                     self._on_error(payload)
@@ -1047,7 +1056,8 @@ class BackroomsApp(tk.Tk):
 
     def _set_busy(self, busy: bool, message: str | None = None) -> None:
         self._busy = busy
-        self.search_button.configure(state="disabled" if busy else "normal")
+        # 加载中仍允许发起新的查询/切换页面；旧请求的结果会按编号丢弃。
+        self.search_button.configure(state="normal")
         if message:
             self._set_status(message)
 
