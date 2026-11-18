@@ -87,6 +87,17 @@ class WikidotClient(BaseClient):
         return [g for i, g in enumerate(guesses) if g and g not in guesses[:i]]
 
     # ---------------------------------------------------------------- 抓取
+    def is_page_cached(self, entry: IndexEntry) -> bool:
+        candidates = [entry.slug] + self._locator_guesses(entry.slug)
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            if self.http.peek_cache(f"{config.BASE_URL}/{candidate}", -1) is not None:
+                return True
+        return False
+
     def fetch_page(
         self,
         locator: str,

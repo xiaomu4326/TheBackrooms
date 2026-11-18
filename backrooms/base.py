@@ -125,6 +125,13 @@ class BaseClient:
     ) -> LevelInfo:  # pragma: no cover
         raise NotImplementedError
 
+    def is_page_cached(self, entry: IndexEntry) -> bool:
+        """只读判断页面是否已有本地缓存，供缓存页展示。"""
+        return False
+
+    def list_cached_entries(self, entries: list[IndexEntry]) -> list[IndexEntry]:
+        return [entry for entry in entries if self.is_page_cached(entry)]
+
     # ---------------------------------------------------------------- 其他
     @staticmethod
     def search_entries(entries: list[IndexEntry], keyword: str, limit: int = 200) -> list[IndexEntry]:

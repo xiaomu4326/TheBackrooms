@@ -333,8 +333,11 @@ public class MainActivity extends Activity {
         queryButton.setOnClickListener(v -> doQuery(false));
         refreshIndexButton.setOnClickListener(v -> loadIndex(true));
         randomButton.setOnClickListener(v -> openRandom());
-        settingsButton.setOnClickListener(v ->
-                startActivity(new Intent(MainActivity.this, SettingsActivity.class)));
+        settingsButton.setOnClickListener(v -> {
+            Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
+            intent.putExtra("source", currentSource());
+            startActivity(intent);
+        });
         listToggleButton.setOnClickListener(v -> toggleList());
 
         sourceSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {

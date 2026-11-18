@@ -29,6 +29,9 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".CacheActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

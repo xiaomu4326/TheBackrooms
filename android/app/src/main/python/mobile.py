@@ -111,6 +111,52 @@ def clear_cache() -> str:
         return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
 
 
+def entries(source: str) -> str:
+    """返回全部层级条目，供设置页批量下载缓存。"""
+    try:
+        client = _client(source)
+        items = client.sort_entries(client.list_levels())
+        return json.dumps(
+            {
+                "ok": True,
+                "entries": [
+                    {"slug": item.slug, "title": item.title} for item in items
+                ],
+            },
+            ensure_ascii=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
+def cache_tree(source: str) -> str:
+    """返回已缓存层级的分类树、索引总数和文件占用。"""
+    try:
+        client = _client(source)
+        entries = client.sort_entries(client.list_levels())
+        cached = client.list_cached_entries(entries)
+        files = [path for path in config.CACHE_DIR.glob("*.json") if path.is_file()]
+        total_bytes = 0
+        for path in files:
+            try:
+                total_bytes += path.stat().st_size
+            except OSError:
+                pass
+        return json.dumps(
+            {
+                "ok": True,
+                "index_total": len(entries),
+                "cached_total": len(cached),
+                "files": len(files),
+                "bytes": total_bytes,
+                "groups": groups.cache_tree(cached, source, client.sort_entries),
+            },
+            ensure_ascii=False,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+
+
 def _direct_locator(source: str, query: str) -> str:
     """数字/编号查询直接猜页面地址，避免首查加载整份索引。"""
     text = re.sub(r"(?i)^level\s*", "", query.strip()).strip()

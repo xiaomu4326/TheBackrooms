@@ -864,6 +864,18 @@ class FandomClient(BaseClient):
         return ""
 
     # ---------------------------------------------------------------- 抓取
+    def is_page_cached(self, entry: IndexEntry) -> bool:
+        params = {
+            "action": "parse",
+            "page": entry.slug,
+            "prop": "text|wikitext|displaytitle|categories|revid",
+            "redirects": "1",
+            "disableeditsection": "1",
+        }
+        query = {**params, "format": "json", "formatversion": "2", "utf8": "1"}
+        url = f"{config.FANDOM_API}?{urlencode(query)}"
+        return self.http.peek_cache(url, -1) is not None
+
     def fetch_page(
         self,
         locator: str,

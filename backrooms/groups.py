@@ -214,6 +214,58 @@ def family_count(key: str, family: dict) -> int:
     return len(family["mains"])
 
 
+def _cache_item(entry: IndexEntry, depth: int) -> dict:
+    return {"title": entry.title, "slug": entry.slug, "depth": depth}
+
+
+def cache_tree(entries: list[IndexEntry], source: str, sorter) -> list[dict]:
+    """把已缓存条目整理成与主页一致的分类/分段结构。"""
+    families = build_families(entries, source, sorter)
+    result: list[dict] = []
+    for key in top_group_order(source):
+        family = families.get(key) or {}
+        count = family_count(key, family)
+        if not count:
+            continue
+        group = {
+            "key": key,
+            "label": TOP_LABELS[key],
+            "count": count,
+            "sections": [],
+            "entries": [],
+        }
+        if key == "normal":
+            for section in family.get("sections", []):
+                items: list[dict] = []
+                for main in section.get("mains", []):
+                    items.append(_cache_item(main["entry"], 0))
+                    for child in main.get("children", []):
+                        items.append(_cache_item(child, 1))
+                if items:
+                    group["sections"].append(
+                        {
+                            "key": section["key"],
+                            "label": section["label"],
+                            "count": len(items),
+                            "entries": items,
+                        }
+                    )
+        elif key in ("c", "zh"):
+            canonical = family.get("canonical") or {}
+            for parent in family.get("mains", []):
+                group["entries"].append(_cache_item(parent, 0))
+                _top, base, _is_sub = level_parts(parent, source)
+                signature = (key, base)
+                if canonical.get(signature) == parent.slug:
+                    for child in family.get("children", {}).get(signature, []):
+                        group["entries"].append(_cache_item(child, 1))
+        else:
+            for entry in family.get("mains", []):
+                group["entries"].append(_cache_item(entry, 0))
+        result.append(group)
+    return result
+
+
 def default_expanded() -> dict[str, bool]:
     return dict(_DEFAULT_EXPANDED)
 

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import queue
 import random
+import re
 import threading
 import time
 import tkinter as tk
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 from .. import config, groups
 from ..base import BaseClient
@@ -96,6 +97,18 @@ class BackroomsApp(tk.Tk):
         self._expanded_ranges: set[str] = set()
         self._last_toggle = 0.0
         self._last_toggle_key = ""
+        self._prefetch_cancel = threading.Event()
+        self._prefetch_lock = threading.Lock()
+        self._prefetch_state = {
+            "running": False,
+            "finished": False,
+            "cancelled": False,
+            "done": 0,
+            "total": 0,
+            "ok": 0,
+            "fail": 0,
+            "title": "",
+        }
 
         self.title(config.APP_TITLE)
         self.geometry("1140x780")
@@ -213,6 +226,100 @@ class BackroomsApp(tk.Tk):
         self._set_status(f"缓存已清理（删除 {removed} 个文件）")
         return removed
 
+    def _prefetch_snapshot(self) -> dict:
+        with self._prefetch_lock:
+            return dict(self._prefetch_state)
+
+    def _start_prefetch(self, queries: list[str] | None = None, client=None) -> None:
+        client = client or self.client
+        with self._prefetch_lock:
+            if self._prefetch_state["running"]:
+                return
+            self._prefetch_state = {
+                "running": True,
+                "finished": False,
+                "cancelled": False,
+                "done": 0,
+                "total": 0,
+                "ok": 0,
+                "fail": 0,
+                "title": "读取索引…" if queries is None else "",
+            }
+        self._prefetch_cancel.clear()
+        threading.Thread(
+            target=self._prefetch_worker,
+            args=(client, queries),
+            daemon=True,
+        ).start()
+
+    def _prefetch_worker(self, client, queries: list[str] | None) -> None:
+        targets: list[tuple[str, str, IndexEntry | None]] = []
+        if queries is None:
+            entries = (
+                self.entries
+                if client is self.client and self.entries
+                else client.list_levels()
+            )
+            targets = [(entry.slug, entry.title, entry) for entry in entries]
+        else:
+            targets = [("", query, None) for query in queries]
+        total = len(targets)
+        with self._prefetch_lock:
+            self._prefetch_state["total"] = total
+            self._prefetch_state["title"] = "准备下载…"
+        if not targets:
+            with self._prefetch_lock:
+                self._prefetch_state["running"] = False
+                self._prefetch_state["finished"] = True
+                self._prefetch_state["fail"] = 1
+                self._prefetch_state["title"] = "索引为空或加载失败"
+            return
+        ok = fail = 0
+        cancelled = False
+        for index, (slug, title, entry) in enumerate(targets, start=1):
+            if self._prefetch_cancel.is_set():
+                cancelled = True
+                break
+            try:
+                if entry is not None:
+                    client.fetch_page(entry.slug, query=entry.title, entry=entry)
+                else:
+                    client.fetch_level(title)
+                ok += 1
+            except Exception:  # noqa: BLE001 - 单个页面失败不应中断整批下载
+                fail += 1
+            with self._prefetch_lock:
+                self._prefetch_state["done"] = index
+                self._prefetch_state["ok"] = ok
+                self._prefetch_state["fail"] = fail
+                self._prefetch_state["title"] = title
+        with self._prefetch_lock:
+            self._prefetch_state["running"] = False
+            self._prefetch_state["finished"] = True
+            self._prefetch_state["cancelled"] = cancelled
+            self._prefetch_state["ok"] = ok
+            self._prefetch_state["fail"] = fail
+
+    def _cache_snapshot(self, client=None, source: str | None = None) -> dict:
+        client = client or self.client
+        source = source or self.source_key
+        entries = client.list_levels()
+        cached = client.list_cached_entries(entries)
+        files = [path for path in config.CACHE_DIR.glob("*.json") if path.is_file()]
+        size = 0
+        for path in files:
+            try:
+                size += path.stat().st_size
+            except OSError:
+                pass
+        return {
+            "index_total": len(entries),
+            "cached_total": len(cached),
+            "files": len(files),
+            "bytes": size,
+            "tree": groups.cache_tree(cached, source, client.sort_entries),
+        }
+
     def _show_settings(self) -> None:
         win = tk.Toplevel(self)
         win.title("设置 · 后室层级档案")
@@ -220,32 +327,245 @@ class BackroomsApp(tk.Tk):
         win.resizable(False, False)
         win.transient(self)
         win.grab_set()
-        win.geometry("420x500")
+        win.geometry("420x360")
 
         card = tk.Frame(win, bg=th.PANEL, highlightthickness=1,
                         highlightbackground=th.LINE)
         card.pack(fill="both", expand=True, padx=14, pady=14)
         inner = tk.Frame(card, bg=th.PANEL, padx=20, pady=18)
         inner.pack(fill="both", expand=True)
-
         tk.Label(inner, text="设置", bg=th.PANEL, fg=th.INK,
                  font=(self.theme.family, 18, "bold")).pack(anchor="w")
-        tk.Label(inner, text="缓存", bg=th.PANEL, fg=th.ACCENT_DARK,
-                 font=(self.theme.family, 11, "bold")).pack(anchor="w", pady=(18, 4))
-        tk.Label(
-            inner,
-            text="缓存永久保留，不会自动过期或删除。只有手动清理，或点击刷新按钮时才更新。",
-            bg=th.PANEL, fg=th.MUTED, font=self.theme.font_small,
-            wraplength=340, justify="left",
-        ).pack(anchor="w")
 
-        stats_var = tk.StringVar(value=self._cache_stats_text())
+        def row(title: str, desc: str, command) -> None:
+            box = tk.Frame(inner, bg=th.PANEL, cursor="hand2")
+            box.pack(fill="x", pady=(14, 0))
+            title_label = tk.Label(box, text=title, bg=th.PANEL, fg=th.INK,
+                                   font=(self.theme.family, 12, "bold"),
+                                   cursor="hand2", anchor="w")
+            title_label.pack(anchor="w")
+            desc_label = tk.Label(box, text=desc, bg=th.PANEL, fg=th.MUTED,
+                                  font=self.theme.font_small, cursor="hand2",
+                                  anchor="w", justify="left", wraplength=320)
+            desc_label.pack(anchor="w", pady=(2, 0))
+            chevron = tk.Label(box, text="›", bg=th.PANEL, fg=th.MUTED,
+                               font=(self.theme.family, 20), cursor="hand2")
+            chevron.place(relx=1.0, rely=0.5, anchor="e")
+            for widget in (box, title_label, desc_label, chevron):
+                widget.bind("<Button-1>", lambda _event: command())
+
+        row(
+            "缓存",
+            f"{self._cache_stats_text()} · 查看已缓存层级、下载和清理",
+            lambda: (win.destroy(), self._show_cache_page()),
+        )
+        row(
+            "关于",
+            "版本、许可证与 GitHub 仓库",
+            lambda: (win.destroy(), self._show_about()),
+        )
+
+        ttk.Button(inner, text="返回", style="Ghost.TButton",
+                   command=win.destroy).pack(side="bottom", anchor="e", pady=(18, 0))
+        win.bind("<Escape>", lambda _event: win.destroy())
+        win.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
+        win.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    def _show_cache_page(self) -> None:
+        win = tk.Toplevel(self)
+        win.title("缓存 · 后室层级档案")
+        win.configure(bg=th.BG)
+        win.transient(self)
+        win.grab_set()
+        win.geometry("760x720")
+
+        card = tk.Frame(win, bg=th.PANEL, highlightthickness=1,
+                        highlightbackground=th.LINE)
+        card.pack(fill="both", expand=True, padx=14, pady=14)
+        inner = tk.Frame(card, bg=th.PANEL, padx=18, pady=16)
+        inner.pack(fill="both", expand=True)
+
+        header = tk.Frame(inner, bg=th.PANEL)
+        header.pack(fill="x")
+        tk.Label(header, text="缓存", bg=th.PANEL, fg=th.INK,
+                 font=(self.theme.family, 18, "bold")).pack(side="left")
+
+        cache_source = self.source_key
+        cache_client = create_client(cache_source)
+        source_row = tk.Frame(inner, bg=th.PANEL)
+        source_row.pack(fill="x", pady=(8, 0))
+        tk.Label(source_row, text="数据源", bg=th.PANEL, fg=th.MUTED,
+                 font=self.theme.font_small).pack(side="left", padx=(0, 6))
+        source_buttons: dict[str, ttk.Button] = {}
+        for key in ("wikidot", "fandom"):
+            button = ttk.Button(
+                source_row, text=config.SOURCE_LABELS[key], style="Ghost.TButton",
+                command=lambda key=key: switch_source(key),
+            )
+            button.pack(side="left", padx=(0, 6))
+            source_buttons[key] = button
+
+        snapshot = self._cache_snapshot(cache_client, cache_source)
+        stats_var = tk.StringVar()
         tk.Label(inner, textvariable=stats_var, bg=th.PANEL, fg=th.INK,
-                 font=(self.theme.family, 11, "bold")).pack(anchor="w", pady=(10, 8))
+                 font=(self.theme.family, 10, "bold")).pack(anchor="w", pady=(8, 0))
 
         actions = tk.Frame(inner, bg=th.PANEL)
-        actions.pack(fill="x")
-        def clear():
+        actions.pack(fill="x", pady=(10, 0))
+        download_all = ttk.Button(actions, text="下载全部缓存", style="Accent.TButton")
+        download_all.pack(side="left")
+        download_selected = ttk.Button(actions, text="下载指定层级", style="Ghost.TButton")
+        download_selected.pack(side="left", padx=(8, 0))
+        clear_button = ttk.Button(actions, text="清理缓存", style="Ghost.TButton")
+        clear_button.pack(side="left", padx=(8, 0))
+        refresh_button = ttk.Button(actions, text="刷新", style="Ghost.TButton")
+        refresh_button.pack(side="left", padx=(8, 0))
+
+        progress_var = tk.StringVar(value="未开始")
+        tk.Label(inner, textvariable=progress_var, bg=th.PANEL, fg=th.MUTED,
+                 font=self.theme.font_small, anchor="w", justify="left",
+                 wraplength=700).pack(anchor="w", pady=(8, 0))
+        cancel_button = ttk.Button(inner, text="取消下载", style="Ghost.TButton",
+                                   command=self._prefetch_cancel.set)
+
+        tk.Frame(inner, bg=th.LINE, height=1).pack(fill="x", pady=(12, 8))
+
+        tree_frame = tk.Frame(inner, bg=th.PANEL)
+        tree_frame.pack(fill="both", expand=True)
+        style = ttk.Style(self)
+        style.configure("Cache.Treeview", background=th.PANEL, fieldbackground=th.PANEL,
+                        foreground=th.INK, rowheight=26,
+                        font=(self.theme.family, 10))
+        style.configure("Cache.Treeview.Heading", background="#F4EDE0",
+                        foreground=th.INK, font=(self.theme.family, 10, "bold"))
+        tree = ttk.Treeview(tree_frame, columns=("slug",), show="tree headings",
+                            style="Cache.Treeview", selectmode="browse")
+        tree.heading("#0", text="层级", anchor="w")
+        tree.heading("slug", text="页面标识", anchor="w")
+        tree.column("#0", width=420, minwidth=240, stretch=True)
+        tree.column("slug", width=250, minwidth=160, stretch=True)
+        tree.tag_configure("group", foreground=th.ACCENT_DARK,
+                           font=(self.theme.family, 10, "bold"))
+        tree.tag_configure("range", foreground=th.ACCENT_DARK,
+                           font=(self.theme.family, 10, "bold"))
+        tree.tag_configure("entry", foreground=th.INK)
+        tree.tag_configure("empty", foreground=th.MUTED)
+        scrollbar = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def refresh_data() -> None:
+            nonlocal snapshot
+            snapshot = self._cache_snapshot(cache_client, cache_source)
+            stats_var.set(
+                f"已缓存 {snapshot['cached_total']} / {snapshot['index_total']} 个层级 · "
+                f"{snapshot['files']} 个缓存文件 · {self._format_bytes(snapshot['bytes'])}"
+            )
+            tree.delete(*tree.get_children())
+            if not snapshot["tree"]:
+                tree.insert("", "end", text="暂无缓存层级，可点击上方按钮下载",
+                            tags=("empty",))
+                return
+            for group in snapshot["tree"]:
+                gid = tree.insert(
+                    "", "end", text=f"{group['label']}（{group['count']}）",
+                    open=False, tags=("group",)
+                )
+                sections = group.get("sections") or []
+                if sections:
+                    for section in sections:
+                        sid = tree.insert(
+                            gid, "end",
+                            text=f"{section['label']}（{section['count']}）",
+                            open=False, tags=("range",),
+                        )
+                        for item in section.get("entries", []):
+                            indent = "    " * item.get("depth", 0)
+                            tree.insert(
+                                sid, "end", text=indent + item["title"],
+                                values=(item["slug"],), tags=("entry",),
+                            )
+                else:
+                    for item in group.get("entries", []):
+                        indent = "    " * item.get("depth", 0)
+                        tree.insert(
+                            gid, "end", text=indent + item["title"],
+                            values=(item["slug"],), tags=("entry",),
+                        )
+
+        refresh_data()
+
+        def update_source_buttons() -> None:
+            for key, button in source_buttons.items():
+                button.configure(
+                    style="Accent.TButton" if key == cache_source else "Ghost.TButton"
+                )
+
+        def switch_source(key: str) -> None:
+            nonlocal cache_source, cache_client
+            if key == cache_source:
+                return
+            if self._prefetch_snapshot()["running"]:
+                messagebox.showinfo(
+                    "正在下载", "请先取消当前下载，再切换数据源。", parent=win
+                )
+                return
+            cache_source = key
+            cache_client = create_client(key)
+            update_source_buttons()
+            progress_var.set(f"已切换到 {config.SOURCE_LABELS[key]}")
+            refresh_data()
+
+        update_source_buttons()
+
+        def parse_queries(raw: str) -> list[str]:
+            result: list[str] = []
+            for part in re.split(r"[,，、;；\n\r]+", raw or ""):
+                query = part.strip()
+                if query and query not in result:
+                    result.append(query)
+            return result
+
+        def start_all() -> None:
+            if self._prefetch_snapshot()["running"]:
+                return
+            if not messagebox.askyesno(
+                "下载全部缓存",
+                "将按当前索引逐个下载所有层级页面，首次可能需要 30–60 分钟，"
+                "期间可取消。确定开始吗？",
+                parent=win,
+            ):
+                return
+            self._start_prefetch(None, client=cache_client)
+
+        def start_selected() -> None:
+            if self._prefetch_snapshot()["running"]:
+                return
+            raw = simpledialog.askstring(
+                "下载指定层级",
+                "输入多个层级，用逗号或换行分隔：",
+                initialvalue="0, 0.1, C-156",
+                parent=win,
+            )
+            if raw is None:
+                return
+            queries = parse_queries(raw)
+            if not queries:
+                messagebox.showinfo("下载指定层级", "没有输入有效层级", parent=win)
+                return
+            if not messagebox.askyesno(
+                "下载指定层级", f"将下载 {len(queries)} 个层级页面，确定开始吗？",
+                parent=win,
+            ):
+                return
+            self._start_prefetch(queries, client=cache_client)
+
+        def clear_cache() -> None:
+            if self._prefetch_snapshot()["running"]:
+                return
             if not messagebox.askyesno(
                 "清理缓存",
                 "清理后，下次查询需要重新从站点下载。确定清理吗？",
@@ -253,26 +573,64 @@ class BackroomsApp(tk.Tk):
             ):
                 return
             self._clear_cache()
-            stats_var.set(self._cache_stats_text())
+            refresh_data()
+            progress_var.set("缓存已清理")
 
-        ttk.Button(actions, text="清理缓存", style="Accent.TButton",
-                   command=clear).pack(side="left")
-        ttk.Button(actions, text="刷新统计", style="Ghost.TButton",
-                   command=lambda: stats_var.set(self._cache_stats_text())).pack(
-            side="left", padx=(8, 0))
+        download_all.configure(command=start_all)
+        download_selected.configure(command=start_selected)
+        clear_button.configure(command=clear_cache)
+        refresh_button.configure(command=refresh_data)
 
-        tk.Frame(inner, bg=th.LINE, height=1).pack(fill="x", pady=(18, 14))
-        tk.Label(inner, text="关于", bg=th.PANEL, fg=th.ACCENT_DARK,
-                 font=(self.theme.family, 11, "bold")).pack(anchor="w", pady=(0, 4))
-        tk.Label(inner, text="版本、许可证与 GitHub 仓库", bg=th.PANEL,
-                 fg=th.MUTED, font=self.theme.font_small).pack(anchor="w")
-        ttk.Button(inner, text="打开关于", style="Ghost.TButton",
-                   command=lambda: (win.destroy(), self._show_about())).pack(
-            anchor="w", pady=(8, 0))
+        last_finished = False
 
+        def poll_prefetch() -> None:
+            nonlocal last_finished
+            state = self._prefetch_snapshot()
+            running = state["running"]
+            download_all.configure(state="disabled" if running else "normal")
+            download_selected.configure(state="disabled" if running else "normal")
+            clear_button.configure(state="disabled" if running else "normal")
+            refresh_button.configure(state="disabled" if running else "normal")
+            if running:
+                last_finished = False
+                if state["total"]:
+                    progress_var.set(
+                        f"下载中 {state['done']}/{state['total']} · "
+                        f"成功 {state['ok']} · 失败 {state['fail']}\n{state['title']}"
+                    )
+                else:
+                    progress_var.set("正在读取索引…")
+                if not cancel_button.winfo_ismapped():
+                    cancel_button.pack(anchor="w", pady=(8, 0))
+                cancel_button.configure(state="normal")
+            else:
+                cancel_button.pack_forget()
+                if state["finished"] and not last_finished:
+                    last_finished = True
+                    refresh_data()
+                if state["finished"]:
+                    prefix = "已取消" if state["cancelled"] else "下载完成"
+                    progress_var.set(
+                        f"{prefix}：成功 {state['ok']}，失败 {state['fail']}"
+                    )
+            win.after(300, poll_prefetch)
+
+        def close_page() -> None:
+            if self._prefetch_snapshot()["running"]:
+                if not messagebox.askyesno(
+                    "正在下载缓存",
+                    "关闭页面会取消正在进行的下载，确定关闭吗？",
+                    parent=win,
+                ):
+                    return
+                self._prefetch_cancel.set()
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", close_page)
+        win.bind("<Escape>", lambda _event: close_page())
         ttk.Button(inner, text="返回", style="Ghost.TButton",
-                   command=win.destroy).pack(side="bottom", anchor="e", pady=(16, 0))
-        win.bind("<Escape>", lambda _event: win.destroy())
+                   command=close_page).pack(side="bottom", anchor="e", pady=(10, 0))
+        poll_prefetch()
         win.update_idletasks()
         x = self.winfo_rootx() + (self.winfo_width() - win.winfo_width()) // 2
         y = self.winfo_rooty() + (self.winfo_height() - win.winfo_height()) // 2
@@ -379,6 +737,7 @@ class BackroomsApp(tk.Tk):
     def _switch_source(self, key: str) -> None:
         if key == self.source_key or key not in config.SOURCE_LABELS:
             return
+        self._prefetch_cancel.set()
         self.source_key = key
         self.client = create_client(key)
         self._generation += 1
