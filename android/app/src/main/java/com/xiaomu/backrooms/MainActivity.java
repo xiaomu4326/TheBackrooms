@@ -208,7 +208,7 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("The Backrooms · Wikidot / Fandom · v1.0.2");
+        subtitle.setText("The Backrooms · Wikidot / Fandom · v1.0.3");
         subtitle.setTextSize(10);
         subtitle.setTextColor(MUTED);
         subtitle.setPadding(0, 0, 0, dp(6));

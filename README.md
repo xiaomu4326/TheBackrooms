@@ -1,6 +1,6 @@
 # 后室层级档案 · Backrooms CN 查询器
 
-版本 **1.0.2**
+版本 **1.0.3**
 
 同时查询 **Wikidot 中文后室** 与 **Fandom 中文后室** 的层级档案。桌面版用 Tkinter 编写，
 Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
@@ -15,8 +15,8 @@ Android 版用原生界面 + Chaquopy 复用同一套 Python 解析核心。
 
 | 文件 | 平台 |
 |---|---|
-| `BackroomsLevelViewer-1.0.2-win64.exe` | Windows 10/11（64 位） |
-| `BackroomsLevelViewer-1.0.2.apk` | Android 7.0+（arm64-v8a / x86_64） |
+| `BackroomsLevelViewer-1.0.3-win64.exe` | Windows 10/11（64 位） |
+| `BackroomsLevelViewer-1.0.3.apk` | Android 7.0+（arm64-v8a / x86_64） |
 
 ## 功能
 
